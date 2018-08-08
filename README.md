@@ -1,5 +1,8 @@
 # Firestarter: Process and shared socket manager
 
+[![crates.io](https://img.shields.io/crates/v/firestarter.svg)](https://crates.io/crates/firestarter)
+[![Patreon](https://img.shields.io/badge/patreon-become%20a%20patron-red.svg)](https://www.patreon.com/mopemope)
+
 Firestarter is simple process and shared socket manager, it designed like [circus][] and [einhorn][].
 
 Firestarter can manage groups of processes and shared sockets like [circus][]. And like [einhorn][] we support manual ack.
