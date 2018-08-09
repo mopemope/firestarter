@@ -1,6 +1,6 @@
 [package]
 name = "firestarter"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Yutaka Matsubara <yutaka.matsubara@gmail.com>"]
 description = "A process and shared socket manager"
 keywords = ["socket", "process-manager", "systemd", "socketactivation"]
