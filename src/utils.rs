@@ -55,7 +55,7 @@ pub fn set_block(fd: libc::c_int) -> io::Result<()> {
 
 pub fn format_duration(d: Duration) -> String {
     let h = d.num_hours();
-    let m = d.num_minutes();
-    let s = d.num_seconds();
+    let m = d.num_minutes() % 60;
+    let s = d.num_seconds() % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
 }
