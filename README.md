@@ -105,60 +105,32 @@ ack = "manual"
 # size:<file size>:<number of backup>:<output path>
 # stderr_log = "size:10240:5:/tmp/web1_err.log"
 
-[web2] # set worker group name
+# it will send upgrade command when their command file is modified.
+# it does the same processing as circus.plugins.CommandReloader.
+# auto_upgrade = false
 
-# set startup process and args
-cmd = ["./demo/target/debug/demo"]
+[web2] # set other worker group name
 
-# set the number of startup processes
-numprocesses = 1
+...
 
-# set working directory
-# working_directory = "/tmp"
-
-# set restart policy. default is none
-# none: not restart process
-# on-failure: restart the process if it is not completed normally
-# always: restart the process whenever you exit
-restart = "on-failure"
-
-# set the seconds to delay the startup of the process
-warmup_delay = 2
-
-# start the process immediately without starting the process when connecting the client socket
-start_immediate = true
-
-# set shared socket addresses
-socket_address = ["127.0.0.1:5000"]
-
-# set processes environment
-environments=["TEST_A=XXXX", "TEST_B=YYYY"]
-
-# set upgrade ack type. default is timer
-# timer: it will terminate the old process after a certain time
-# manual: send ack manually. For details, refer to einhorn's manual ack document
-# ack = "manual"
-
-# set timer ack time in seconds
-# ack_timeout = 2
-
-# set uid
-# uid = 1000
-
-# set gid
-# gid = 10
-
-# output stdout to file
-# only size rotation is supported
-# size:<file size>:<number of backup>:<output path>
-# stdout_log = "size:10240:5:/tmp/web1_out.log"
-
-# output stderr to file
-# only size rotation is supported
-# size:<file size>:<number of backup>:<output path>
-# stderr_log = "size:10240:5:/tmp/web1_err.log"
 
 ```
+
+## Control command
+
+Firestarter also provides a client that controls the running daemon.
+
+For example, you can check the status with the following command.
+
+```
+$ firestarter ctrl web1 status
+send ctrl command [status] to [web1] worker
+[web1] active
+processes [24170, 24171]
+time 00:00:06
+```
+
+For details, please refer to the help `firestarter ctrl -h`.
 
 ## Contributing
 
