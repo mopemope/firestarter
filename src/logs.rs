@@ -38,7 +38,7 @@ impl RollingPolicy {
         if !p.exists() {
             return Ok(false);
         }
-        let log_ext = p.extension().unwrap_or(OsStr::new(""));
+        let log_ext = p.extension().unwrap_or_else(|| OsStr::new(""));
         let parent = p.parent().unwrap();
         let name = match p.file_stem() {
             Some(f) => f,
@@ -143,7 +143,7 @@ impl FromStr for RollingLogFile {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<RollingLogFile, Error> {
-        let log_cfg: Vec<&str> = s.split(":").collect();
+        let log_cfg: Vec<&str> = s.split(':').collect();
         let log_type = log_cfg[0];
         match log_type {
             "size" => {

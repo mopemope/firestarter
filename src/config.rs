@@ -86,7 +86,7 @@ pub enum AckKind {
 }
 
 impl RestartStrategy {
-    pub fn need_respawn(&self, code: i32) -> bool {
+    pub fn need_respawn(self, code: i32) -> bool {
         match self {
             RestartStrategy::None => false,
             RestartStrategy::Always => true,
@@ -98,7 +98,7 @@ impl RestartStrategy {
 impl Config {}
 
 impl WorkerConfig {
-    pub fn control_sock(&self, name: &String) -> String {
+    pub fn control_sock(&self, name: &str) -> String {
         if self.control_socket.is_some() {
             self.control_socket.clone().unwrap()
         } else {

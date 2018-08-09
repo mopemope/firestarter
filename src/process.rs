@@ -5,6 +5,8 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
+use config::WorkerConfig;
+
 #[derive(Debug)]
 pub struct Process {
     pub id: u64,
@@ -29,15 +31,11 @@ impl Process {
     pub fn new(
         id: u64,
         name: String,
-        cmdline: &Vec<String>,
         working_directory: String,
         environment: HashMap<String, String>,
-        stdout_pipe: bool,
-        stderr_pipe: bool,
-        uid: Option<u32>,
-        gid: Option<u32>,
+        config: &WorkerConfig,
     ) -> Self {
-        let cmdline = cmdline.iter().map(|c| c.to_string()).collect();
+        let cmdline = config.cmd.iter().map(|c| c.to_string()).collect();
         Process {
             id,
             name,
@@ -45,12 +43,38 @@ impl Process {
             environment,
             working_directory,
             child: None,
-            stderr_pipe,
-            stdout_pipe,
-            uid,
-            gid,
+            stdout_pipe: config.stdout_log.is_some(),
+            stderr_pipe: config.stderr_log.is_some(),
+            uid: config.uid,
+            gid: config.gid,
         }
     }
+
+    // pub fn new(
+    //     id: u64,
+    //     name: String,
+    //     cmdline: &[String],
+    //     working_directory: String,
+    //     environment: HashMap<String, String>,
+    //     stdout_pipe: bool,
+    //     stderr_pipe: bool,
+    //     uid: Option<u32>,
+    //     gid: Option<u32>,
+    // ) -> Self {
+    //     let cmdline = cmdline.iter().map(|c| c.to_string()).collect();
+    //     Process {
+    //         id,
+    //         name,
+    //         cmdline,
+    //         environment,
+    //         working_directory,
+    //         child: None,
+    //         stderr_pipe,
+    //         stdout_pipe,
+    //         uid,
+    //         gid,
+    //     }
+    // }
 
     pub fn process_name(&mut self) -> String {
         let name = &self.name;

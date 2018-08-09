@@ -30,7 +30,7 @@ impl ListenFd {
             )))
         } else if let Ok(socket_addr) = s.parse() {
             Ok(ListenFd::TcpListener(socket_addr))
-        } else if s.contains("/") {
+        } else if s.contains('/') {
             ListenFd::new_unix_listener(s)
         } else {
             Err(err_msg(format!(

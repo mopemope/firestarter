@@ -14,9 +14,7 @@ use nix::sys::signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, fork, getpid, ForkResult, Pid};
 
-use command::{
-    read_command, send_ctrl_command, send_response, Command, CommandResponse, CtrlCommand, Status,
-};
+use command::*;
 use config::WorkerConfig;
 use reloader;
 use signal::Signal;
@@ -107,9 +105,9 @@ impl MonitorProcess {
         }
     }
 
-    pub fn send_ctrl_command(&self, cmd: CtrlCommand) -> io::Result<()> {
+    pub fn send_ctrl_command(&self, cmd: &CtrlCommand) -> io::Result<()> {
         let sock_path = &self.sock_path;
-        send_ctrl_command(sock_path, &cmd)?;
+        send_ctrl_command(sock_path, cmd)?;
         Ok(())
     }
 
@@ -208,7 +206,7 @@ impl MonitorProcess {
             }
             ForkResult::Child => {
                 self.pid = Some(getpid());
-                if let Err(err) = self.start(key, worker) {
+                if let Err(err) = self.start(&key, worker) {
                     // do cleanup
                     warn!("fail monitor start. cause {}", err);
                     return Err(err);
@@ -218,7 +216,7 @@ impl MonitorProcess {
         }
     }
 
-    pub fn start(&mut self, key: String, worker: &mut Worker) -> io::Result<bool> {
+    pub fn start(&mut self, key: &str, worker: &mut Worker) -> io::Result<bool> {
         let sa = signal::SigAction::new(
             signal::SigHandler::Handler(handle_signal),
             signal::SaFlags::empty(),
@@ -268,7 +266,7 @@ impl MonitorProcess {
         let giveup = self.config.giveup;
         // 4. create monitor
         let mut monitor = Monitor::new(ctrl_fd, giveup);
-        monitor.watch_ctrl_fd(&ctrl_fd)?;
+        monitor.watch_ctrl_fd(ctrl_fd)?;
 
         // 5. spawn worker
         if fds.is_empty() || worker.start_immediate() {
@@ -277,7 +275,7 @@ impl MonitorProcess {
             // watch_fd
             for fd in fds {
                 let raw_fd = fd as RawFd;
-                monitor.watch_listen_fd(&raw_fd)?;
+                monitor.watch_listen_fd(raw_fd)?;
             }
         }
 
@@ -287,7 +285,7 @@ impl MonitorProcess {
     }
 
     pub fn kill_all(&mut self) -> io::Result<()> {
-        self.send_ctrl_command(CtrlCommand {
+        self.send_ctrl_command(&CtrlCommand {
             command: Command::KillAll,
             pid: 0,
             signal: Some(Signal::SIGKILL),
@@ -380,29 +378,29 @@ impl Monitor {
         Token(self.token_count)
     }
 
-    pub fn watch_io(&mut self, fd: &RawFd, kind: OutputKind) -> io::Result<()> {
+    pub fn watch_io(&mut self, fd: RawFd, kind: OutputKind) -> io::Result<()> {
         let token = self.next_token();
         self.poll
-            .register(&EventedFd(fd), token, Ready::readable(), PollOpt::level())?;
-        self.io_events.insert(token, IOEvent::new(token, *fd, kind));
+            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::level())?;
+        self.io_events.insert(token, IOEvent::new(token, fd, kind));
         Ok(())
     }
 
-    pub fn watch_listen_fd(&mut self, fd: &RawFd) -> io::Result<()> {
+    pub fn watch_listen_fd(&mut self, fd: RawFd) -> io::Result<()> {
         let token = self.next_token();
         self.poll
-            .register(&EventedFd(fd), token, Ready::readable(), PollOpt::edge())?;
+            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::edge())?;
         self.fd_events
-            .insert(token, FdEvent::LisetnFdEvent(*fd, token));
+            .insert(token, FdEvent::LisetnFdEvent(fd, token));
         Ok(())
     }
 
-    pub fn watch_ctrl_fd(&mut self, fd: &RawFd) -> io::Result<()> {
+    pub fn watch_ctrl_fd(&mut self, fd: RawFd) -> io::Result<()> {
         let token = self.next_token();
         self.poll
-            .register(&EventedFd(fd), token, Ready::readable(), PollOpt::level())?;
+            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::level())?;
         self.fd_events
-            .insert(token, FdEvent::CtrlFdEvent(*fd, token));
+            .insert(token, FdEvent::CtrlFdEvent(fd, token));
         Ok(())
     }
 
@@ -508,14 +506,14 @@ impl Monitor {
         Ok(res)
     }
 
-    fn send_ctrl_command(&mut self, cmd: CtrlCommand, worker: &mut Worker) -> CommandResponse {
+    fn send_ctrl_command(&mut self, cmd: &CtrlCommand, worker: &mut Worker) -> CommandResponse {
         let CtrlCommand {
             ref command,
-            pid: _,
             signal,
+            ..
         } = cmd;
 
-        match self.exec_command(command, signal, worker) {
+        match self.exec_command(command, *signal, worker) {
             Ok(res) => res,
             Err(err) => {
                 error!("fail exec command. cause {:?} pid [{}]", err, self.pid);
@@ -540,15 +538,15 @@ impl Monitor {
             );
             self.poll.poll_interruptible(&mut events, None)?;
             for event in &events {
-                let token = &event.token();
-                if let Some(fd) = self.get_listen_event(&token)? {
+                let token = event.token();
+                if let Some(fd) = self.get_listen_event(token)? {
                     self.poll.deregister(&EventedFd(&fd))?;
                     // spawn
                     if !worker.active {
                         worker.run(self)?;
                     }
                 }
-                if let Err(err) = self.process_ctrl_event(&token, worker) {
+                if let Err(err) = self.process_ctrl_event(token, worker) {
                     warn!("fail process ctrl event. cause {:?}", err);
                 }
             }
@@ -556,7 +554,7 @@ impl Monitor {
         Ok(())
     }
 
-    fn process_log_event(&mut self, worker: &mut Worker, token: &Token) -> io::Result<bool> {
+    fn process_log_event(&mut self, worker: &mut Worker, token: Token) -> io::Result<bool> {
         let remove = if let Some(ref mut event) = self.io_events.get_mut(&token) {
             let mut remove = false;
             let mut buf = vec![0; 4096];
@@ -568,13 +566,13 @@ impl Monitor {
             match event.kind {
                 OutputKind::StdOut => {
                     if let Some(ref mut log) = worker.stdout_log {
-                        log.write(&buf[..size])?;
+                        log.write_all(&buf[..size])?;
                         log.flush()?;
                     };
                 }
                 OutputKind::StdErr => {
                     if let Some(ref mut log) = worker.stderr_log {
-                        log.write(&buf[..size])?;
+                        log.write_all(&buf[..size])?;
                         log.flush()?;
                     };
                 }
@@ -586,7 +584,7 @@ impl Monitor {
         Ok(remove)
     }
 
-    fn get_listen_event(&mut self, token: &Token) -> io::Result<Option<RawFd>> {
+    fn get_listen_event(&mut self, token: Token) -> io::Result<Option<RawFd>> {
         let res = if let Some(ref mut event) = self.fd_events.get_mut(&token) {
             match event {
                 FdEvent::LisetnFdEvent(fd, _) => Some(*fd),
@@ -598,24 +596,23 @@ impl Monitor {
         Ok(res)
     }
 
-    fn is_ctrl_event(&self, token: &Token) -> bool {
+    fn is_ctrl_event(&self, token: Token) -> bool {
         if let Some(event) = self.fd_events.get(&token) {
-            match event {
-                FdEvent::CtrlFdEvent(..) => return true,
-                _ => {}
+            if let FdEvent::CtrlFdEvent(..) = event {
+                return true;
             }
         }
         false
     }
 
-    fn get_ack_event(&mut self, token: &Token) -> io::Result<Option<Signal>> {
+    fn get_ack_event(&mut self, token: Token) -> io::Result<Option<Signal>> {
         if self.is_ctrl_event(token) {
             let (stream, _addr) = &mut self.ctrl_sock.accept()?;
             let cmd = read_command(stream)?;
             let CtrlCommand {
                 ref command,
-                pid: _,
                 signal,
+                ..
             } = cmd;
 
             match command {
@@ -626,11 +623,11 @@ impl Monitor {
         Ok(None)
     }
 
-    fn process_ctrl_event(&mut self, token: &Token, worker: &mut Worker) -> io::Result<()> {
+    fn process_ctrl_event(&mut self, token: Token, worker: &mut Worker) -> io::Result<()> {
         if self.is_ctrl_event(token) {
             let (mut stream, _addr) = self.ctrl_sock.accept()?;
-            let cmd = read_command(&mut stream)?;
-            let res = self.send_ctrl_command(cmd, worker);
+            let cmd = read_command(&stream)?;
+            let res = self.send_ctrl_command(&cmd, worker);
             match res.command {
                 Command::Ack => {
                     // ignore ack response
@@ -665,13 +662,13 @@ impl Monitor {
             match self.poll.poll_interruptible(&mut events, timeout) {
                 Ok(size) => {
                     for event in &events {
-                        let token = &event.token();
+                        let token = event.token();
                         // catch err ?
                         if self.process_log_event(worker, token)? {
                             alive = false;
                             self.io_events.remove(&token);
                         }
-                        if let Err(err) = self.process_ctrl_event(&token, worker) {
+                        if let Err(err) = self.process_ctrl_event(token, worker) {
                             warn!(
                                 "fail process ctrl event. cause {:?} pid [{}]",
                                 err, self.pid
@@ -719,7 +716,7 @@ impl Monitor {
         // wait ...
         let mut events = Events::with_capacity(32);
         let mut ack: Vec<Option<Signal>> = Vec::new();
-        while ack.len() == 0 {
+        while ack.is_empty() {
             if let Err(err) = self.poll.poll_interruptible(&mut events, None) {
                 // cleanup
                 worker.signal(Signal::SIGTERM)?;
@@ -729,12 +726,12 @@ impl Monitor {
                 return Err(err);
             }
             for event in &events {
-                let token = &event.token();
+                let token = event.token();
                 // log event
                 if self.process_log_event(worker, token)? {
                     self.io_events.remove(&token);
                 }
-                let signal = self.get_ack_event(&token)?;
+                let signal = self.get_ack_event(token)?;
                 ack.push(signal);
             }
         }

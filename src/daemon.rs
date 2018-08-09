@@ -50,7 +50,7 @@ impl Drop for Listener {
     }
 }
 
-//#[derive(Debug)]
+// #[derive(Debug)]
 pub struct Daemon {
     config: Config,
     workers: HashMap<String, Worker>,
@@ -84,7 +84,7 @@ impl Daemon {
         self.pid == getpid()
     }
 
-    fn listen_ctrl_sock(path: &String) -> Result<UnixListener, Error> {
+    fn listen_ctrl_sock(path: &str) -> Result<UnixListener, Error> {
         let listen_fd: ListenFd = path.parse().unwrap();
         let pid = getpid();
         match listen_fd {
@@ -122,7 +122,7 @@ impl Daemon {
                 let res = send_ctrl_command(&sock_path, &cmd.command.unwrap())?;
                 let buf = serde_json::to_string(&res)?;
                 stream.write_all(buf.as_bytes())?;
-                stream.write(b"\n")?;
+                stream.write_all(b"\n")?;
                 stream.flush()?;
             }
         }
@@ -136,7 +136,7 @@ impl Daemon {
     ) -> io::Result<()> {
         let cmd = &cmd.command.unwrap();
         let mut v = Vec::new();
-        for (name, _) in &self.workers {
+        for name in self.workers.keys() {
             if let Some(config) = self.config.workers.get(name) {
                 let sock_path = config.control_sock(&name);
                 let res = send_ctrl_command(&sock_path, cmd)?;
@@ -145,13 +145,13 @@ impl Daemon {
         }
         let buf = serde_json::to_string(&v)?;
         stream.write_all(buf.as_bytes())?;
-        stream.write(b"\n")?;
+        stream.write_all(b"\n")?;
         stream.flush()?;
         Ok(())
     }
 
     fn check_cmd_modified(&mut self) -> io::Result<()> {
-        for (name, monitor) in self.monitors.iter_mut() {
+        for (name, monitor) in &mut self.monitors {
             if monitor.config.auto_upgrade {
                 let modified = reloader::is_modified_cmd(
                     &monitor.config,
@@ -182,6 +182,7 @@ impl Daemon {
         }
         Ok(())
     }
+
     pub fn wait(&mut self, listener: &UnixListener) -> io::Result<()> {
         let timeout = time::Duration::from_secs(1);
         let poll = Poll::new().unwrap();
@@ -196,7 +197,7 @@ impl Daemon {
 
         // start loop
         let mut events = Events::with_capacity(16);
-        while self.monitors.len() > 0 {
+        while !self.monitors.is_empty() {
             if let Err(err) = poll.poll_interruptible(&mut events, Some(timeout)) {
                 // Interrupt
                 debug!("interrupt main loop. cause {:?} pid [{}]", err, self.pid);
@@ -232,7 +233,7 @@ impl Daemon {
     fn check_monitors(&mut self) -> Vec<String> {
         let mut exit_keys: Vec<String> = Vec::new();
         let mut restart_keys: Vec<String> = Vec::new();
-        for (name, monitor) in self.monitors.iter_mut() {
+        for (name, monitor) in &mut self.monitors {
             match monitor.try_wait() {
                 Ok(ExitStatus::Interrupt) => {
                     exit_keys.push(name.to_owned());
@@ -285,7 +286,7 @@ impl Daemon {
     }
 
     fn clean_process(&mut self) {
-        for (_name, mon) in self.monitors.iter_mut() {
+        for mon in self.monitors.values_mut() {
             if let Err(_err) = mon.kill_all() {
                 // ignore cleanup error
                 // warn!("Fail kill all {} monitor. cause {:?}", name, err);
@@ -297,7 +298,7 @@ impl Daemon {
         }
 
         // wait ...
-        while self.monitors.len() > 0 {
+        while !self.monitors.is_empty() {
             if let Err(err) = self.check_process() {
                 error!("fail spwan monitor process. cause {:?}", err);
             }
@@ -308,7 +309,7 @@ impl Daemon {
 
     pub fn run(&mut self) -> Result<(), Error> {
         info!("start daemon. pid [{}]", self.pid);
-        for (name, worker) in self.workers.iter_mut() {
+        for (name, worker) in &mut self.workers {
             if !self.monitors.contains_key(name) {
                 let mut monitor = MonitorProcess::new(name.to_owned(), worker.config.clone());
                 if monitor.spawn(worker)? {
@@ -324,7 +325,7 @@ impl Daemon {
                 listener: ctrl_sock,
                 config: self.config.clone(),
             };
-            if self.monitors.len() > 0 {
+            if !self.monitors.is_empty() {
                 self.wait(&listener.listener)?
             }
         }
@@ -334,7 +335,7 @@ impl Daemon {
     fn send_list(&mut self, stream: &mut UnixStream) -> io::Result<()> {
         let pid = pid_t::from(getpid());
         let mut v: Vec<String> = Vec::new();
-        for (name, _) in &self.config.workers {
+        for name in self.config.workers.keys() {
             v.push(name.to_owned());
         }
         let res = ListResponse {
@@ -343,7 +344,7 @@ impl Daemon {
         };
         let buf = serde_json::to_string(&res)?;
         stream.write_all(buf.as_bytes())?;
-        stream.write(b"\n")?;
+        stream.write_all(b"\n")?;
         stream.flush()?;
         Ok(())
     }

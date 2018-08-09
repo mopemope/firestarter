@@ -96,8 +96,9 @@ impl ToString for CommandResponse {
     fn to_string(&self) -> String {
         let buf = String::new();
         // buf = buf.add(&format!("status  {:?}\n", self.status));
-        buf.add(&format!("{}", self.message))
+        // buf.add(&format!("{}", self.message))
         // buf.add(&format!("\nresponse from pid [{}]\n", self.pid))
+        buf.add(&self.message)
     }
 }
 
@@ -199,12 +200,12 @@ pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> io::Result<B
         let _len = reader.read_line(&mut line)?;
         debug!("received response {}. pid [{}]", line, pid);
 
-        match serde_json::from_str(&line) {
-            Ok(res @ ListResponse { .. }) => return Ok(Box::new(res)),
-            _ => {}
+        if let Ok(res @ ListResponse { .. }) = serde_json::from_str(&line) {
+            return Ok(Box::new(res));
         }
+
         match serde_json::from_str(&line)? {
-            res @ CommandResponse { .. } => return Ok(Box::new(res)),
+            res @ CommandResponse { .. } => Ok(Box::new(res)),
         }
     } else {
         Err(io::Error::new(

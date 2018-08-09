@@ -36,7 +36,6 @@ mod worker;
 fn main() {
     use nix::unistd::{getpid, getppid};
     use std::env;
-
     let want_bt = match env::var("RUST_BACKTRACE").as_ref().map(|x| x.as_str()) {
         Ok("1") | Ok("full") => true,
         _ => false,

@@ -13,12 +13,12 @@ impl Client {
     }
 
     pub fn list(&mut self, sock_path: &str) -> Result<(), Error> {
-        info!("show worker names.",);
+        info!("show worker names");
         self.send_list(sock_path)
     }
 
     pub fn status(&mut self, sock_path: &str) -> Result<(), Error> {
-        info!("show worker status.",);
+        info!("show worker status");
         self.send_status(sock_path)
     }
 
@@ -40,14 +40,11 @@ impl Client {
         command: &str,
         signal: Option<&str>,
     ) -> Result<(), Error> {
-        let signal = signal.map(|signal| {
-            let signal: Signal = signal.parse().unwrap();
-            signal
-        });
-        let c: Command = command.parse().unwrap();
+        let signal: Option<Signal> = signal.map(|signal| signal.parse().unwrap());
+        let cmd: Command = command.parse().unwrap();
         let pid = pid_t::from(getpid());
         let ctrl_cmd = CtrlCommand {
-            command: c,
+            command: cmd,
             pid: pid as u32,
             signal,
         };
