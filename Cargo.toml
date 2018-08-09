@@ -2,9 +2,10 @@
 name = "firestarter"
 version = "0.1.0"
 authors = ["Yutaka Matsubara <yutaka.matsubara@gmail.com>"]
-description = "Process and shared socket manager"
+description = "A process and shared socket manager"
 keywords = ["socket", "process-manager", "systemd", "socketactivation"]
 homepage = "https://github.com/mopemope/firestarter"
+repository = "https://github.com/mopemope/firestarter"
 readme = "README.md"
 license = "MIT/Apache-2.0"
 exclude = ["demo"]

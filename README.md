@@ -1,4 +1,4 @@
-# Firestarter: Process and shared socket manager
+# Firestarter: A process and shared socket manager
 
 [![crates.io](https://img.shields.io/crates/v/firestarter.svg)](https://crates.io/crates/firestarter)
 [![Patreon](https://img.shields.io/badge/patreon-become%20a%20patron-red.svg)](https://www.patreon.com/mopemope)
