@@ -27,6 +27,7 @@ mod daemon;
 mod logs;
 mod monitor;
 mod process;
+mod reloader;
 mod signal;
 mod sock;
 mod utils;

@@ -18,6 +18,7 @@ use command::{
     read_command, send_ctrl_command, send_response, Command, CommandResponse, CtrlCommand, Status,
 };
 use config::WorkerConfig;
+use reloader;
 use signal::Signal;
 use sock::ListenFd;
 use utils::format_duration;
@@ -45,6 +46,8 @@ pub struct MonitorProcess {
     pub pid: Option<Pid>,
     sock_path: String,
     pub listen_fd: Vec<RawFd>,
+    pub cmd_path: path::PathBuf,
+    pub cmd_mtime: time::SystemTime,
 }
 
 fn close_fds() {
@@ -70,12 +73,18 @@ impl Drop for MonitorProcess {
 impl MonitorProcess {
     pub fn new(name: String, config: WorkerConfig) -> Self {
         let sock_path = config.control_sock(&name);
+        let cmd_path = reloader::cmd_path(&config);
+        let metadata = cmd_path.metadata().unwrap();
+        let cmd_mtime = metadata.modified().unwrap();
+
         MonitorProcess {
             name,
             config,
             pid: None,
             sock_path,
             listen_fd: Vec::new(),
+            cmd_path,
+            cmd_mtime,
         }
     }
 

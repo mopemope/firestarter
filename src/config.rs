@@ -41,6 +41,8 @@ pub struct WorkerConfig {
     pub control_socket: Option<String>,
     pub uid: Option<u32>,
     pub gid: Option<u32>,
+    #[serde(default = "default_bool")]
+    pub auto_upgrade: bool,
 }
 
 fn default_bool() -> bool {

@@ -16,6 +16,7 @@ use serde_json;
 use command::*;
 use config::{Config, WorkerConfig};
 use monitor::{ExitStatus, MonitorProcess};
+use reloader;
 use sock::ListenFd;
 use worker::Worker;
 
@@ -149,6 +150,38 @@ impl Daemon {
         Ok(())
     }
 
+    fn check_cmd_modified(&mut self) -> io::Result<()> {
+        for (name, monitor) in self.monitors.iter_mut() {
+            if monitor.config.auto_upgrade {
+                let modified = reloader::is_modified_cmd(
+                    &monitor.config,
+                    &monitor.cmd_path,
+                    &monitor.cmd_mtime,
+                )?;
+                if modified {
+                    // start upgrade
+                    {
+                        // send upgrade command
+                        let upgrade_cmd = CtrlCommand {
+                            command: Command::Upgrade,
+                            pid: pid_t::from(self.pid) as u32,
+                            signal: None,
+                        };
+                        let sock_path = monitor.config.control_sock(&name);
+                        let res = send_ctrl_command(&sock_path, &upgrade_cmd)?;
+                        let _buf = serde_json::to_string(&res)?;
+                    }
+                    // update
+                    let cmd_path = reloader::cmd_path(&monitor.config);
+                    let metadata = cmd_path.metadata()?;
+                    let cmd_mtime = metadata.modified()?;
+                    monitor.cmd_path = cmd_path;
+                    monitor.cmd_mtime = cmd_mtime;
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn wait(&mut self, listener: &UnixListener) -> io::Result<()> {
         let timeout = time::Duration::from_secs(1);
         let poll = Poll::new().unwrap();
@@ -161,6 +194,7 @@ impl Daemon {
             PollOpt::edge(),
         )?;
 
+        // start loop
         let mut events = Events::with_capacity(16);
         while self.monitors.len() > 0 {
             if let Err(err) = poll.poll_interruptible(&mut events, Some(timeout)) {
@@ -181,7 +215,11 @@ impl Daemon {
                     }
                 }
             }
-            // debug!("wait");
+
+            if let Err(err) = self.check_cmd_modified() {
+                warn!("fail check modified command. cause {:?}", err);
+            }
+
             if let Err(_err) = self.check_process() {
                 // error!("{:?}", err);
             }
