@@ -14,53 +14,22 @@ use nix::unistd::{getpid, Pid};
 use serde_json;
 
 use command::*;
-use config::{Config, WorkerConfig};
+use config::Config;
 use monitor::{ExitStatus, MonitorProcess};
 use reloader;
 use sock::ListenFd;
-use worker::Worker;
 
 extern "C" fn handle_signal(_signum: i32) {}
-
-struct Listener {
-    path: String,
-    listener: UnixListener,
-    config: Config,
-}
-
-impl Drop for Listener {
-    fn drop(&mut self) {
-        for (name, config) in &self.config.workers {
-            let sock_path = config.control_sock(name);
-            if path::Path::new(&sock_path).exists() {
-                if let Err(err) = fs::remove_file(&sock_path) {
-                    warn!("fail remove control socket. cause {:?}", err);
-                } else {
-                    info!("remove control socket. {:?}", &sock_path);
-                }
-            }
-        }
-        if path::Path::new(&self.path).exists() {
-            if let Err(err) = fs::remove_file(&self.path) {
-                warn!("fail remove control socket. cause {:?}", err);
-            } else {
-                info!("remove control socket. {:?}", &self.path);
-            }
-        }
-    }
-}
 
 // #[derive(Debug)]
 pub struct Daemon {
     config: Config,
-    workers: HashMap<String, Worker>,
     monitors: HashMap<String, MonitorProcess>,
     pid: Pid,
 }
 
 impl Daemon {
     pub fn new(config: Config) -> Self {
-        let wrk_map = Daemon::create_workers(&config.workers);
         let sa = SigAction::new(
             SigHandler::Handler(handle_signal),
             SaFlags::empty(),
@@ -74,7 +43,6 @@ impl Daemon {
         let pid = getpid();
         Daemon {
             config,
-            workers: wrk_map,
             monitors: HashMap::new(),
             pid,
         }
@@ -102,15 +70,6 @@ impl Daemon {
         }
     }
 
-    fn create_workers(m: &HashMap<String, WorkerConfig>) -> HashMap<String, Worker> {
-        let mut workers: HashMap<String, Worker> = HashMap::new();
-        for (name, cfg) in m.iter() {
-            let worker = Worker::new(name.to_owned(), cfg.clone());
-            workers.insert(name.to_owned(), worker);
-        }
-        workers
-    }
-
     fn send_command_worker(
         &mut self,
         cmd: DaemonCommand,
@@ -136,12 +95,10 @@ impl Daemon {
     ) -> io::Result<()> {
         let cmd = &cmd.command.unwrap();
         let mut v = Vec::new();
-        for name in self.workers.keys() {
-            if let Some(config) = self.config.workers.get(name) {
-                let sock_path = config.control_sock(&name);
-                let res = send_ctrl_command(&sock_path, cmd)?;
-                v.push(res);
-            }
+        for (name, config) in &self.config.workers {
+            let sock_path = config.control_sock(name);
+            let res = send_ctrl_command(&sock_path, cmd)?;
+            v.push(res);
         }
         let buf = serde_json::to_string(&v)?;
         stream.write_all(buf.as_bytes())?;
@@ -152,12 +109,10 @@ impl Daemon {
 
     fn check_cmd_modified(&mut self) -> io::Result<()> {
         for (name, monitor) in &mut self.monitors {
-            if monitor.config.auto_upgrade {
-                let modified = reloader::is_modified_cmd(
-                    &monitor.config,
-                    &monitor.cmd_path,
-                    &monitor.cmd_mtime,
-                )?;
+            let config = &self.config.workers[name];
+            if config.auto_upgrade {
+                let modified =
+                    reloader::is_modified_cmd(&config, &monitor.cmd_path, &monitor.cmd_mtime)?;
                 if modified {
                     // start upgrade
                     {
@@ -167,12 +122,12 @@ impl Daemon {
                             pid: pid_t::from(self.pid) as u32,
                             signal: None,
                         };
-                        let sock_path = monitor.config.control_sock(&name);
+                        let sock_path = config.control_sock(&name);
                         let res = send_ctrl_command(&sock_path, &upgrade_cmd)?;
                         let _buf = serde_json::to_string(&res)?;
                     }
                     // update
-                    let cmd_path = reloader::cmd_path(&monitor.config);
+                    let cmd_path = reloader::cmd_path(config);
                     let metadata = cmd_path.metadata()?;
                     let cmd_mtime = metadata.modified()?;
                     monitor.cmd_path = cmd_path;
@@ -255,13 +210,11 @@ impl Daemon {
             if let Some(m) = self.monitors.remove(&key) {
                 m.remove_ctrl_sock();
             }
-            self.workers.remove(&key);
         }
         for key in &restart_keys {
             if let Some(ref mut m) = self.monitors.remove(key) {
                 m.remove_ctrl_sock();
             }
-            self.workers.remove(key);
         }
         restart_keys
     }
@@ -273,11 +226,8 @@ impl Daemon {
                 info!("wait respawn monitor process [{}]", name);
                 let timeout = time::Duration::from_secs(1);
                 thread::sleep(timeout);
-                let mut worker = Worker::new(name.to_owned(), config.clone());
-                let mut monitor = MonitorProcess::new(name.to_owned(), config.clone());
-                // respawn
-                if monitor.spawn(&mut worker)? {
-                    self.workers.insert(name.to_owned(), worker);
+                let mut monitor = MonitorProcess::new(name.to_owned(), config);
+                if monitor.spawn(name, config)? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
             }
@@ -292,12 +242,9 @@ impl Daemon {
                 // warn!("Fail kill all {} monitor. cause {:?}", name, err);
             }
         }
-
         if let Err(err) = self.check_process() {
             error!("fail spwan monitor process. cause {:?}", err);
         }
-
-        // wait ...
         while !self.monitors.is_empty() {
             if let Err(err) = self.check_process() {
                 error!("fail spwan monitor process. cause {:?}", err);
@@ -309,24 +256,19 @@ impl Daemon {
 
     pub fn run(&mut self) -> Result<(), Error> {
         info!("start daemon. pid [{}]", self.pid);
-        for (name, worker) in &mut self.workers {
+        for (name, config) in &mut self.config.workers {
             if !self.monitors.contains_key(name) {
-                let mut monitor = MonitorProcess::new(name.to_owned(), worker.config.clone());
-                if monitor.spawn(worker)? {
+                let mut monitor = MonitorProcess::new(name.to_owned(), config);
+                if monitor.spawn(name, config)? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
             }
         }
 
         if self.is_daemon_process() {
-            let ctrl_sock = Daemon::listen_ctrl_sock(&self.config.control_sock)?;
-            let listener = Listener {
-                path: self.config.control_sock.to_owned(),
-                listener: ctrl_sock,
-                config: self.config.clone(),
-            };
+            let listener = Daemon::listen_ctrl_sock(&self.config.control_sock)?;
             if !self.monitors.is_empty() {
-                self.wait(&listener.listener)?
+                self.wait(&listener)?
             }
         }
         Ok(())
@@ -347,5 +289,28 @@ impl Daemon {
         stream.write_all(b"\n")?;
         stream.flush()?;
         Ok(())
+    }
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        for (name, config) in &self.config.workers {
+            let sock_path = config.control_sock(name);
+            if path::Path::new(&sock_path).exists() {
+                if let Err(err) = fs::remove_file(&sock_path) {
+                    warn!("fail remove control socket. cause {:?}", err);
+                } else {
+                    info!("remove control socket. {:?}", &sock_path);
+                }
+            }
+        }
+        let path = &self.config.control_sock;
+        if path::Path::new(path).exists() {
+            if let Err(err) = fs::remove_file(path) {
+                warn!("fail remove control socket. cause {:?}", err);
+            } else {
+                info!("remove control socket. {:?}", path);
+            }
+        }
     }
 }

@@ -1,23 +1,10 @@
-use std::fs::{File, OpenOptions};
-use std::os::unix::io::AsRawFd;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{env, io, time};
 
 use chrono::Duration;
 use libc;
 
 use app::APP_NAME;
-
-pub fn check_fd() {
-    let path = Path::new("/tmp/a");
-    let file: File = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(path)
-        .unwrap();
-    let fd = file.as_raw_fd();
-    debug!("! max fd = {:?}", fd);
-}
 
 pub trait IsMinusOne {
     fn is_minus_one(&self) -> bool;

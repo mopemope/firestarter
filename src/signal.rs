@@ -70,11 +70,6 @@ pub enum Signal {
     SIGUSR2,
 }
 
-impl Signal {
-    pub fn signal(self, pid: libc::pid_t) -> io::Result<()> {
-        pid.signal(self)
-    }
-}
 pub trait SignalSend {
     fn signal(&self, signal: Signal) -> io::Result<()>;
 }

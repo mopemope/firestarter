@@ -19,7 +19,7 @@ use app::{APP_NAME, APP_NAME_UPPER};
 use command::*;
 use config::WorkerConfig;
 use reloader;
-use signal::Signal;
+use signal::{Signal, SignalSend};
 use sock::ListenFd;
 use utils::format_duration;
 use worker::Worker;
@@ -45,7 +45,6 @@ pub enum ExitStatus {
 
 pub struct MonitorProcess {
     pub name: String,
-    pub config: WorkerConfig,
     pub pid: Option<Pid>,
     sock_path: String,
     pub listen_fd: Vec<RawFd>,
@@ -71,7 +70,7 @@ impl Drop for MonitorProcess {
 }
 
 impl MonitorProcess {
-    pub fn new(name: String, config: WorkerConfig) -> Self {
+    pub fn new(name: String, config: &WorkerConfig) -> Self {
         let sock_path = config.control_sock(&name);
         let cmd_path = reloader::cmd_path(&config);
         let metadata = cmd_path.metadata().unwrap();
@@ -79,7 +78,6 @@ impl MonitorProcess {
 
         MonitorProcess {
             name,
-            config,
             pid: None,
             sock_path,
             listen_fd: Vec::new(),
@@ -133,9 +131,9 @@ impl MonitorProcess {
         Ok(())
     }
 
-    fn listen_fds(&mut self) -> Result<Vec<RawFd>, Error> {
+    fn listen_fds(&mut self, config: &WorkerConfig) -> Result<Vec<RawFd>, Error> {
         let mut vec: Vec<RawFd> = Vec::new();
-        for addr in &self.config.socket_address {
+        for addr in &config.socket_address {
             let listen_fd: ListenFd = addr.parse().unwrap();
             debug!("try listen sock {}. pid [{}]", addr, getpid());
             let raw_fd = listen_fd.create_raw_fd(128)?;
@@ -218,8 +216,8 @@ impl MonitorProcess {
         }
     }
 
-    pub fn spawn(&mut self, worker: &mut Worker) -> io::Result<bool> {
-        let key = self.config.environment_base_name.to_owned();
+    pub fn spawn(&mut self, name: &str, config: &WorkerConfig) -> io::Result<bool> {
+        let key = config.environment_base_name.to_owned();
         match fork().expect("failed fork") {
             ForkResult::Parent { child } => {
                 // parent
@@ -228,7 +226,9 @@ impl MonitorProcess {
             }
             ForkResult::Child => {
                 self.pid = Some(getpid());
-                if let Err(err) = self.start(&key, worker) {
+                let mut worker = Worker::new(name, config);
+
+                if let Err(err) = self.start(&key, &mut worker, config) {
                     // do cleanup
                     warn!("fail monitor start. cause {}", err);
                     return Err(err);
@@ -238,7 +238,12 @@ impl MonitorProcess {
         }
     }
 
-    pub fn start(&mut self, key: &str, worker: &mut Worker) -> io::Result<bool> {
+    pub fn start(
+        &mut self,
+        key: &str,
+        worker: &mut Worker,
+        config: &WorkerConfig,
+    ) -> io::Result<bool> {
         let sa = signal::SigAction::new(
             signal::SigHandler::Handler(handle_signal),
             signal::SaFlags::empty(),
@@ -251,8 +256,8 @@ impl MonitorProcess {
             signal::sigaction(signal::SIGABRT, &sa).unwrap();
             signal::sigaction(signal::SIGHUP, &sa).unwrap();
         }
-        if self.config.warmup_delay > 0 {
-            let delay = time::Duration::from_secs(self.config.warmup_delay);
+        if config.warmup_delay > 0 {
+            let delay = time::Duration::from_secs(config.warmup_delay);
             thread::sleep(delay);
         }
         let pid = self.pid.unwrap();
@@ -260,7 +265,7 @@ impl MonitorProcess {
         // 1. close all fd
         close_fds();
         // 2. listen fd
-        let fds = self.listen_fds().unwrap();
+        let fds = self.listen_fds(config).unwrap();
         // child
         if !fds.is_empty() {
             let listen_fds = fds.len();
@@ -285,7 +290,7 @@ impl MonitorProcess {
         worker.add_extra_env(&format!("{}_SOCK_PATH", key), &self.sock_path);
         worker.add_extra_env(&format!("{}_MASTER_PID", key), &getpid().to_string());
 
-        let giveup = self.config.giveup;
+        let giveup = config.giveup;
         // 4. create monitor
         let mut monitor = Monitor::new(ctrl_fd, giveup);
         monitor.watch_ctrl_fd(ctrl_fd)?;
@@ -312,25 +317,17 @@ impl MonitorProcess {
         })
     }
 
-    pub fn kill(&mut self) {
+    pub fn signal(&mut self, signal: Signal) {
         if let Some(pid) = self.pid {
-            debug!("kill monitor [{}]. pid [{}]", self.name, pid);
-            if let Err(err) = signal::kill(pid, signal::SIGKILL) {
+            let pid = libc::pid_t::from(pid) as u32;
+            debug!(
+                "signal [{:?}] monitor [{}]. pid [{}]",
+                signal, self.name, pid
+            );
+            if let Err(err) = pid.signal(signal) {
                 warn!(
-                    "fail kill monitor  [{}]. cause {:?}. pid [{}]",
-                    self.name, err, pid
-                );
-            }
-        }
-    }
-
-    pub fn terminate(&mut self) {
-        if let Some(pid) = self.pid {
-            debug!("terminate monitor [{}]. pid [{}]", self.name, pid);
-            if let Err(err) = signal::kill(pid, signal::SIGTERM) {
-                warn!(
-                    "fail terminate monitor [{}]. cause {:?}. pid [{}]",
-                    self.name, err, pid
+                    "fail signal [{:?}] monitor [{}]. cause {:?}. pid [{}]",
+                    signal, self.name, err, pid
                 );
             }
         }

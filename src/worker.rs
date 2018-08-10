@@ -13,10 +13,10 @@ use process::Process;
 use signal::{Signal, SignalSend};
 
 // #[derive(Debug)]
-pub struct Worker {
+pub struct Worker<'a> {
     pub id: u64,
-    pub name: String,
-    pub config: WorkerConfig,
+    pub name: &'a str,
+    pub config: &'a WorkerConfig,
     processes: Vec<Process>,
     pub stdout_log: Option<Box<io::Write>>,
     pub stderr_log: Option<Box<io::Write>>,
@@ -28,16 +28,9 @@ pub struct Worker {
     started_at: Option<DateTime<Utc>>,
 }
 
-impl Worker {
-    pub fn new(name: String, config: WorkerConfig) -> Self {
-        // validate
-        if let Some(ref stdout) = config.stdout_log {
-            let _stdout_log: RollingLogFile = stdout.parse().unwrap();
-        }
-        if let Some(ref stderr) = config.stderr_log {
-            let _stderr_log: RollingLogFile = stderr.parse().unwrap();
-        }
-        let num = config.numprocesses;
+impl<'a> Worker<'a> {
+    pub fn new(name: &'a str, config: &'a WorkerConfig) -> Self {
+        let num_processes = config.numprocesses;
         let now = Utc::now();
         Worker {
             id: 0,
@@ -47,7 +40,7 @@ impl Worker {
             stdout_log: None,
             stderr_log: None,
             active: false,
-            num_processes: num,
+            num_processes,
             extra_env: Vec::new(),
             created_at: now,
             updated_at: now,
@@ -55,20 +48,8 @@ impl Worker {
         }
     }
 
-    pub fn set_config(&mut self, config: WorkerConfig) {
-        self.config = config;
-    }
-
-    pub fn add_env(&mut self, k: &str, v: &str) {
-        self.config.environments.push(format!("{}={}", k, v));
-    }
-
     pub fn add_extra_env(&mut self, k: &str, v: &str) {
         self.extra_env.push(format!("{}={}", k, v));
-    }
-
-    pub fn clear_extra_env(&mut self) {
-        self.extra_env.clear();
     }
 
     fn get_log_writer(s: &str) -> io::Result<Box<io::Write>> {
@@ -231,28 +212,13 @@ impl Worker {
         }
         let mut p = Process::new(
             self.id,
-            self.name.clone(),
+            self.name.to_owned(),
             wd.to_string(),
             penv,
             &self.config,
         );
         p.spawn()?;
         Ok(p)
-    }
-
-    pub fn kill_one_process(&mut self) -> io::Result<u32> {
-        let mut ret = 0;
-        if let Some(mut p) = self.processes.pop() {
-            if let Some(pid) = p.pid() {
-                ret = pid;
-                if let Err(err) = p.kill() {
-                    warn!("fail kill process. cause {}", err);
-                } else {
-                    info!("kill process. pid [{}]", pid);
-                }
-            }
-        }
-        Ok(ret)
     }
 
     pub fn signal_one_process(&mut self, signal: Signal) -> io::Result<u32> {
@@ -268,24 +234,6 @@ impl Worker {
             }
         }
         Ok(ret)
-    }
-
-    pub fn kill_process(&mut self, id: u64) -> io::Result<()> {
-        debug!("kill worker process id [{}]", id);
-        self.processes.drain_filter(|p| {
-            if p.id == id {
-                if let Err(err) = p.kill() {
-                    warn!("fail kill process. cause {}", err);
-                } else if let Some(pid) = p.pid() {
-                    info!("kill process. pid [{}]", pid);
-                }
-                true
-            } else {
-                false
-            }
-        });
-        self.updated_at = Utc::now();
-        Ok(())
     }
 
     pub fn kill(&mut self) -> io::Result<Vec<u32>> {

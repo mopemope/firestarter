@@ -6,6 +6,7 @@ use std::{env, io};
 use toml::from_str;
 
 use app::{APP_NAME, APP_NAME_UPPER};
+use logs::RollingLogFile;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -130,7 +131,17 @@ pub fn parse_config(path: String) -> io::Result<Config> {
     };
 
     let wrkrs: HashMap<String, WorkerConfig> = from_str(&config_toml).expect("toml parse error");
-    debug!("{:?}", wrkrs);
+
+    for wrk_config in wrkrs.values() {
+        // validate config
+        if let Some(ref stdout) = wrk_config.stdout_log {
+            let _stdout_log: RollingLogFile = stdout.parse().unwrap();
+        }
+        if let Some(ref stderr) = wrk_config.stderr_log {
+            let _stderr_log: RollingLogFile = stderr.parse().unwrap();
+        }
+        debug!("{:?}", wrk_config);
+    }
     config.workers = wrkrs;
     Ok(config)
 }
