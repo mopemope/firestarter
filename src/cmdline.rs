@@ -3,6 +3,7 @@ use std::{env, path};
 use clap::{App, AppSettings, Arg, SubCommand};
 use failure::Error;
 
+use app::APP_NAME;
 use client::Client;
 use config::parse_config;
 use daemon::Daemon;
@@ -10,17 +11,17 @@ use daemon::Daemon;
 lazy_static! {
     pub static ref SOCK_PATH: path::PathBuf = {
         let mut dir = env::temp_dir();
-        dir.push("firestarter-control.socket");
+        dir.push(format!("{}-control.socket", APP_NAME));
         dir
     };
 }
 
 fn make_app() -> App<'static, 'static> {
     let sock_path = SOCK_PATH.to_str().unwrap();
-    App::new("firestarter")
+    App::new(APP_NAME)
         .version(env!("CARGO_PKG_VERSION"))
         .setting(AppSettings::SubcommandRequiredElseHelp)
-        .about("process and shared socket manager")
+        .about("A process and shared socket manager")
         .subcommand(
             SubCommand::with_name("run")
                 .about("Run daemon")

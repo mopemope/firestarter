@@ -5,6 +5,8 @@ use std::{env, io};
 
 use toml::from_str;
 
+use app::{APP_NAME, APP_NAME_UPPER};
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub control_sock: String,
@@ -43,6 +45,8 @@ pub struct WorkerConfig {
     pub gid: Option<u32>,
     #[serde(default = "default_bool")]
     pub auto_upgrade: bool,
+    #[serde(default = "default_zero")]
+    pub live_check_timeout: u64,
 }
 
 fn default_bool() -> bool {
@@ -58,7 +62,7 @@ fn default_vec_str() -> Vec<String> {
     Vec::new()
 }
 fn default_base_name() -> String {
-    "FIRESTARTER".to_owned()
+    APP_NAME_UPPER.to_owned()
 }
 fn default_ack() -> AckKind {
     AckKind::Timer
@@ -103,7 +107,7 @@ impl WorkerConfig {
             self.control_socket.clone().unwrap()
         } else {
             let mut dir = env::temp_dir();
-            dir.push(format!("firestarter-{}.socket", name));
+            dir.push(format!("{}-{}.socket", APP_NAME, name));
             let path = dir.to_str().unwrap();
             String::from(path)
         }
@@ -116,7 +120,7 @@ pub fn parse_config(path: String) -> io::Result<Config> {
     file.read_to_string(&mut config_toml)?;
 
     let mut dir = env::temp_dir();
-    dir.push("firestarter-control.socket");
+    dir.push(format!("{}-control.socket", APP_NAME));
     let path = dir.to_str().unwrap();
     let sock = String::from(path);
 

@@ -7,6 +7,7 @@ use std::string::String;
 use std::{env, fs, io, path, thread, time};
 
 use failure::{err_msg, Error};
+use glob::glob;
 use libc;
 use mio::unix::EventedFd;
 use mio::{Events, Poll, PollOpt, Ready, Token};
@@ -14,6 +15,7 @@ use nix::sys::signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, fork, getpid, ForkResult, Pid};
 
+use app::{APP_NAME, APP_NAME_UPPER};
 use command::*;
 use config::WorkerConfig;
 use reloader;
@@ -27,7 +29,10 @@ extern "C" fn handle_signal(signum: i32) {
     let sigint = signal::SIGINT as libc::c_int;
     let sigquit = signal::SIGQUIT as libc::c_int;
     if s != sigint && s != sigquit {
-        env::set_var("FIRESTARTER_HANDLE_SIGNAL", format!("{}", signum));
+        env::set_var(
+            format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER),
+            format!("{}", signum),
+        );
     }
 }
 
@@ -61,10 +66,7 @@ fn close_fds() {
 impl Drop for MonitorProcess {
     fn drop(&mut self) {
         self.close_listen_fd();
-        if path::Path::new(&self.sock_path).exists() {
-            fs::remove_file(&self.sock_path).unwrap();
-            info!("remove control socket. {:?}", &self.sock_path);
-        }
+        self.remove_ctrl_sock();
     }
 }
 
@@ -101,6 +103,26 @@ impl MonitorProcess {
                 warn!("fail remove control socket {}. cause {:?}", sock_path, err);
             } else {
                 info!("remove control socket. {:?}", &sock_path);
+            }
+        }
+        self.remove_process_watch_files();
+    }
+
+    pub fn remove_process_watch_files(&self) {
+        if let Some(root) = env::temp_dir().to_str() {
+            if let Ok(paths) = glob(&format!("{}/{}-process-{}-*", root, APP_NAME, self.name)) {
+                for entry in paths {
+                    match entry {
+                        Ok(ref path) => {
+                            if let Err(e) = fs::remove_file(path) {
+                                warn!("fail remove watch file {:?}. cause {:?}", path, e);
+                            } else {
+                                info!("remove watch file {:?}", path);
+                            }
+                        }
+                        Err(_e) => {}
+                    }
+                }
             }
         }
     }
@@ -267,7 +289,6 @@ impl MonitorProcess {
         // 4. create monitor
         let mut monitor = Monitor::new(ctrl_fd, giveup);
         monitor.watch_ctrl_fd(ctrl_fd)?;
-
         // 5. spawn worker
         if fds.is_empty() || worker.start_immediate() {
             worker.run(&mut monitor)?;
@@ -278,7 +299,6 @@ impl MonitorProcess {
                 monitor.watch_listen_fd(raw_fd)?;
             }
         }
-
         // 6. monitor.run
         monitor.start(worker)?;
         Ok(false)
@@ -434,7 +454,7 @@ impl Monitor {
             }
             Command::Stop => {
                 let signal = signal.unwrap_or(Signal::SIGTERM);
-                let pids = worker.signal(signal)?;
+                let pids = worker.signal_all(signal)?;
                 CommandResponse {
                     status: Status::Ok,
                     command: command.clone(),
@@ -452,7 +472,8 @@ impl Monitor {
                 }
             }
             Command::Dec => {
-                let pid = worker.dec()?;
+                let signal = signal.unwrap_or(Signal::SIGTERM);
+                let pid = worker.dec(signal)?;
                 CommandResponse {
                     status: Status::Ok,
                     command: command.clone(),
@@ -657,6 +678,8 @@ impl Monitor {
         let mut fail = 0;
         let timeout = Some(time::Duration::from_secs(1));
         let mut events = Events::with_capacity(1024);
+        let mut now = time::SystemTime::now();
+
         while self.active {
             let mut alive = true;
             match self.poll.poll_interruptible(&mut events, timeout) {
@@ -675,10 +698,16 @@ impl Monitor {
                             );
                         }
                     }
+
+                    if let Ok(elapsed) = now.elapsed() {
+                        if elapsed.as_secs() > 1 {
+                            worker.check_live_processes();
+                            now = time::SystemTime::now();
+                        }
+                    }
                     if alive && size > 0 {
                         continue;
                     }
-                    // debug!("wait. pid {}", getpid());
                     let (_alive, respawn) = worker.health_check();
                     for _ in 0..respawn {
                         if let Err(err) = worker.run_process(self) {
@@ -697,10 +726,10 @@ impl Monitor {
                 }
                 Err(err) => {
                     // cleanup
-                    if let Err(err) = worker.signal(Signal::SIGTERM) {
+                    if let Err(err) = worker.signal_all(Signal::SIGTERM) {
                         warn!("fail send signal SIGTERM. cause {:?}", err);
                     }
-                    if let Ok(_var) = env::var("FIRESTARTER_HANDLE_SIGNAL") {
+                    if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
                         exit(-1);
                     }
                     return Err(err);
@@ -719,8 +748,8 @@ impl Monitor {
         while ack.is_empty() {
             if let Err(err) = self.poll.poll_interruptible(&mut events, None) {
                 // cleanup
-                worker.signal(Signal::SIGTERM)?;
-                if let Ok(_var) = env::var("FIRESTARTER_HANDLE_SIGNAL") {
+                worker.signal_all(Signal::SIGTERM)?;
+                if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
                     exit(-1);
                 }
                 return Err(err);

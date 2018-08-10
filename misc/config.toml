@@ -55,6 +55,13 @@ ack = "manual"
 # it does the same processing as circus.plugins.CommandReloader.
 # auto_upgrade = false
 
+# we will check the existence of the process (experimental).
+# the process needs to periodically update the mtime of the file passed in environment variable FIRESTARTER_WATCH_FILE.
+# the monitoring process kills the process when the mtime update interval exceeds the threshold. this is the same process as gunicorn's worker notify.
+# the unit is seconds, and the default value is 0 (disable live check)
+# live_check_timeout = 60
+
+######################################################################
 # [web2] # set worker group name
 
 # set startup process and args

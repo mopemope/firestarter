@@ -46,7 +46,7 @@ pub fn send_sigusr2(pid: libc::pid_t) -> io::Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGUSR2)).map(|_| ()) }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum Signal {
     #[serde(rename = "SIGKILL")]
     SIGKILL,

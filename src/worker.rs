@@ -121,13 +121,13 @@ impl Worker {
         self.run_process(monitor)
     }
 
-    pub fn dec(&mut self) -> io::Result<u32> {
+    pub fn dec(&mut self, signal: Signal) -> io::Result<u32> {
         let pid = getpid();
         if self.num_processes > 1 {
             info!("dec [{}] worker. pid [{}]", self.name, pid);
             self.num_processes -= 1;
             info!("kill processes. pid [{}]", pid);
-            self.kill_process()
+            self.signal_one_process(signal)
         } else {
             Ok(0)
         }
@@ -240,17 +240,52 @@ impl Worker {
         Ok(p)
     }
 
-    pub fn kill_process(&mut self) -> io::Result<u32> {
-        let mut pid = 0;
+    pub fn kill_one_process(&mut self) -> io::Result<u32> {
+        let mut ret = 0;
         if let Some(mut p) = self.processes.pop() {
-            pid = p.pid().unwrap();
-            if let Err(err) = p.kill() {
-                warn!("fail kill process. cause {}", err);
-            } else {
-                info!("kill process. pid [{}]", pid);
+            if let Some(pid) = p.pid() {
+                ret = pid;
+                if let Err(err) = p.kill() {
+                    warn!("fail kill process. cause {}", err);
+                } else {
+                    info!("kill process. pid [{}]", pid);
+                }
             }
         }
-        Ok(pid)
+        Ok(ret)
+    }
+
+    pub fn signal_one_process(&mut self, signal: Signal) -> io::Result<u32> {
+        let mut ret = 0;
+        if let Some(mut p) = self.processes.pop() {
+            if let Some(pid) = p.pid() {
+                ret = pid;
+                if let Err(err) = pid.signal(signal) {
+                    warn!("fail send signal process. cause {}", err);
+                } else {
+                    info!("send signal process. pid [{}]", pid);
+                }
+            }
+        }
+        Ok(ret)
+    }
+
+    pub fn kill_process(&mut self, id: u64) -> io::Result<()> {
+        debug!("kill worker process id [{}]", id);
+        self.processes.drain_filter(|p| {
+            if p.id == id {
+                if let Err(err) = p.kill() {
+                    warn!("fail kill process. cause {}", err);
+                } else if let Some(pid) = p.pid() {
+                    info!("kill process. pid [{}]", pid);
+                }
+                true
+            } else {
+                false
+            }
+        });
+        self.updated_at = Utc::now();
+        Ok(())
     }
 
     pub fn kill(&mut self) -> io::Result<Vec<u32>> {
@@ -271,15 +306,18 @@ impl Worker {
         Ok(res)
     }
 
-    pub fn signal(&mut self, sig: Signal) -> io::Result<Vec<u32>> {
+    pub fn signal_all(&mut self, sig: Signal) -> io::Result<Vec<u32>> {
         let mut pids: Vec<u32> = Vec::new();
         for p in &mut self.processes {
             let pid = p.pid().unwrap();
-            debug!("send signal {:?}. [{}]", sig, p.process_name());
+            debug!("send signal {:?}. {}", sig, p.process_name());
             if let Err(err) = pid.signal(sig) {
                 warn!("fail send signal {:?} to pid [{}]. cause {}", sig, pid, err);
             } else {
                 info!("send signal {:?} to pid [{}]", sig, pid);
+                if sig == Signal::SIGTERM || sig == Signal::SIGKILL {
+                    p.cleanup();
+                }
                 pids.push(pid);
             };
         }
@@ -290,12 +328,9 @@ impl Worker {
     fn move_old_process(&mut self) -> Vec<Process> {
         let self_pid = getpid();
         let mut old_processes: Vec<Process> = Vec::with_capacity(self.processes.len());
-        while !self.processes.is_empty() {
-            if let Some(p) = self.processes.pop() {
-                old_processes.push(p);
-            }
+        while let Some(p) = self.processes.pop() {
+            old_processes.push(p);
         }
-        self.processes.clear();
         info!(
             "move old processes. [{}] worker. pid [{}]",
             self.name, self_pid
@@ -341,17 +376,16 @@ impl Worker {
             }
         }
         thread::sleep(time::Duration::from_secs(1));
-        while !old_processes.is_empty() {
-            if let Some(ref mut p) = old_processes.pop() {
-                if p.try_wait().is_none() {
-                    if let Err(err) = p.kill() {
-                        warn!("fail kill process. cause {:?}", err);
-                    }
-                    warn!("no reaction. killed process {}", p.process_name(),);
+        while let Some(ref mut p) = old_processes.pop() {
+            if p.try_wait().is_none() {
+                if let Err(err) = p.kill() {
+                    warn!("fail kill process. cause {:?}", err);
                 }
-                info!("exited process {}", p.process_name());
+                warn!("no reaction. killed process {}", p.process_name(),);
             }
+            info!("exited process {}", p.process_name());
         }
+
         Ok((new, old))
     }
 
@@ -385,17 +419,16 @@ impl Worker {
             }
         }
         thread::sleep(time::Duration::from_secs(1));
-        while !tmp.is_empty() {
-            if let Some(ref mut p) = tmp.pop() {
-                if p.try_wait().is_none() {
-                    if let Err(err) = p.kill() {
-                        warn!("fail kill process. cause {:?}", err);
-                    }
-                    warn!("no reaction. killed process {}", p.process_name());
+        while let Some(ref mut p) = tmp.pop() {
+            if p.try_wait().is_none() {
+                if let Err(err) = p.kill() {
+                    warn!("fail kill process. cause {:?}", err);
                 }
-                info!("exited process {}", p.process_name());
+                warn!("no reaction. killed process {}", p.process_name());
             }
+            info!("exited process {}", p.process_name());
         }
+
         Ok((new, old))
     }
 
@@ -436,6 +469,21 @@ impl Worker {
             now.sub(start)
         } else {
             Duration::zero()
+        }
+    }
+
+    pub fn check_live_processes(&mut self) {
+        for p in &mut self.processes {
+            if p.check_live_timeout(self.config.live_check_timeout) {
+                // timeout process
+                if let Some(pid) = p.pid() {
+                    if let Err(err) = p.kill() {
+                        warn!("fail kill process. cause {}", err);
+                    } else {
+                        info!("kill process. pid [{}]", pid);
+                    }
+                }
+            }
         }
     }
 }
