@@ -144,7 +144,6 @@ impl Process {
                     file_path.to_owned(),
                 );
             }
-
             *watch_file = path;
         }
         Ok(())

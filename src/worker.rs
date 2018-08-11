@@ -17,7 +17,7 @@ pub struct Worker<'a> {
     pub id: u64,
     pub name: &'a str,
     pub config: &'a WorkerConfig,
-    processes: Vec<Process>,
+    pub processes: Vec<Process>,
     pub stdout_log: Option<Box<io::Write>>,
     pub stderr_log: Option<Box<io::Write>>,
     pub active: bool,
@@ -304,22 +304,40 @@ impl<'a> Worker<'a> {
     fn run_timer_ack(
         &mut self,
         monitor: &mut Monitor,
-        signal: Signal,
+        default_signal: Signal,
     ) -> io::Result<(Vec<u32>, Vec<u32>)> {
         let mut old = Vec::new();
         let self_pid = getpid();
         let mut old_processes = self.move_old_process();
-        let new = self.spawn_upgrade_processes(monitor)?;
+        self.spawn_upgrade_processes(monitor)?;
         info!(
             "upgrading. wait ack [{:?}] [{}] worker. pid [{}]",
             self.config.ack, self.name, self_pid
         );
         let timeout = time::Duration::from_secs(self.config.ack_timeout);
         thread::sleep(timeout);
+        // check new process ACK'd
+        let mut failed = 0;
+        self.processes.drain_filter(|p| {
+            if p.try_wait().is_some() {
+                error!("fail upgrade process. pid [{:?}]", p.pid());
+                failed += 1;
+                return true;
+            }
+            false
+        });
+        while failed > 0 {
+            if let Some(p) = old_processes.pop() {
+                // do not terminate old process
+                self.processes.push(p);
+                failed -= 1;
+            }
+        }
+
         for p in &mut old_processes {
             if let Some(pid) = p.pid() {
-                debug!("send signal {:?} {}", signal, p.process_name(),);
-                pid.signal(signal)?;
+                debug!("send signal {:?} {}", default_signal, p.process_name(),);
+                pid.signal(default_signal)?;
                 old.push(pid);
             }
         }
@@ -327,42 +345,47 @@ impl<'a> Worker<'a> {
         while let Some(ref mut p) = old_processes.pop() {
             if p.try_wait().is_none() {
                 if let Err(err) = p.kill() {
-                    warn!("fail kill process. cause {:?}", err);
+                    warn!("fail old kill process. cause {:?}", err);
                 }
-                warn!("no reaction. killed process {}", p.process_name(),);
+                warn!("no reaction. killed old process {}", p.process_name(),);
             }
-            info!("exited process {}", p.process_name());
+            info!("exited old process {}", p.process_name());
         }
-
-        Ok((new, old))
+        Ok((self.process_pid(), old))
     }
 
     fn run_manual_ack(
         &mut self,
         monitor: &mut Monitor,
-        signal: Signal,
+        default_signal: Signal,
     ) -> io::Result<(Vec<u32>, Vec<u32>)> {
         let mut old = Vec::new();
         let self_pid = getpid();
         let mut old_processes = self.move_old_process();
-        let new = self.spawn_upgrade_processes(monitor)?;
+        self.spawn_upgrade_processes(monitor)?;
         info!(
             "upgrading. wait ack [{:?}] [{}] worker. pid [{}]",
             self.config.ack, self.name, self_pid
         );
         let mut tmp: Vec<Process> = Vec::with_capacity(old_processes.len());
         while !old_processes.is_empty() {
-            let signals = monitor.wait_ack(self)?;
+            let signals = monitor.wait_ack(self, default_signal)?;
             debug!("receive ack. custom signals {:?}", signals);
             for ack_sig in signals {
                 if let Some(mut p) = old_processes.pop() {
-                    let sig = ack_sig.unwrap_or(signal);
                     if let Some(pid) = p.pid() {
-                        pid.signal(sig)?;
+                        pid.signal(ack_sig)?;
                         old.push(pid);
                         tmp.push(p);
-                        debug!("sended signal {:?} to pid [{}]", sig, pid);
+                        debug!("sended signal {:?} to pid [{}]", ack_sig, pid);
                     }
+                }
+            }
+            let mut failed = self.num_processes as usize - self.processes.len();
+            while failed > 0 {
+                if let Some(p) = old_processes.pop() {
+                    self.processes.push(p);
+                    failed -= 1;
                 }
             }
         }
@@ -370,14 +393,47 @@ impl<'a> Worker<'a> {
         while let Some(ref mut p) = tmp.pop() {
             if p.try_wait().is_none() {
                 if let Err(err) = p.kill() {
-                    warn!("fail kill process. cause {:?}", err);
+                    warn!("fail kill old process. cause {:?}", err);
                 }
-                warn!("no reaction. killed process {}", p.process_name());
+                warn!("no reaction. killed old process {}", p.process_name());
             }
-            info!("exited process {}", p.process_name());
+            info!("exited old process {}", p.process_name());
         }
 
-        Ok((new, old))
+        Ok((self.process_pid(), old))
+    }
+
+    fn run_no_ack(
+        &mut self,
+        monitor: &mut Monitor,
+        signal: Signal,
+    ) -> io::Result<(Vec<u32>, Vec<u32>)> {
+        let mut old = Vec::new();
+        let self_pid = getpid();
+        info!(
+            "upgrading. wait ack [{:?}] [{}] worker. pid [{}]",
+            self.config.ack, self.name, self_pid
+        );
+
+        for p in &mut self.processes {
+            if let Some(pid) = p.pid() {
+                debug!("send signal {:?} to {}", signal, p.process_name());
+                pid.signal(signal)?;
+                old.push(pid);
+            }
+        }
+        thread::sleep(time::Duration::from_secs(1));
+        while let Some(ref mut p) = self.processes.pop() {
+            if p.try_wait().is_none() {
+                if let Err(err) = p.kill() {
+                    warn!("fail old kill process. cause {:?}", err);
+                }
+                warn!("no reaction. killed old process {}", p.process_name(),);
+            }
+            info!("exited old process {}", p.process_name());
+        }
+        self.spawn_upgrade_processes(monitor)?;
+        Ok((self.process_pid(), old))
     }
 
     pub fn upgrade(
@@ -401,6 +457,7 @@ impl<'a> Worker<'a> {
         let result = match self.config.ack {
             AckKind::Timer => self.run_timer_ack(monitor, signal)?,
             AckKind::Manual => self.run_manual_ack(monitor, signal)?,
+            AckKind::None => self.run_no_ack(monitor, signal)?,
         };
 
         self.updated_at = Utc::now();

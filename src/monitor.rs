@@ -738,12 +738,17 @@ impl Monitor {
         Ok(())
     }
 
-    pub fn wait_ack(&mut self, worker: &mut Worker) -> io::Result<Vec<Option<Signal>>> {
-        // wait ...
-        let mut events = Events::with_capacity(32);
-        let mut ack: Vec<Option<Signal>> = Vec::new();
-        while ack.is_empty() {
-            if let Err(err) = self.poll.poll_interruptible(&mut events, None) {
+    pub fn wait_ack(
+        &mut self,
+        worker: &mut Worker,
+        default_signal: Signal,
+    ) -> io::Result<Vec<Signal>> {
+        let mut events = Events::with_capacity(1024);
+        let mut ack = Vec::new();
+        let timeout = Some(time::Duration::from_secs(1));
+        let mut count = 0;
+        while ack.is_empty() && count < 10 {
+            if let Err(err) = self.poll.poll_interruptible(&mut events, timeout) {
                 // cleanup
                 worker.signal_all(Signal::SIGTERM)?;
                 if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
@@ -751,15 +756,23 @@ impl Monitor {
                 }
                 return Err(err);
             }
+            count += 1;
             for event in &events {
                 let token = event.token();
-                // log event
                 if self.process_log_event(worker, token)? {
                     self.io_events.remove(&token);
                 }
                 let signal = self.get_ack_event(token)?;
-                ack.push(signal);
+                ack.push(signal.unwrap_or(default_signal));
             }
+
+            worker.processes.drain_filter(|p| {
+                if p.try_wait().is_some() {
+                    error!("fail upgrade process. pid [{:?}]", p.pid());
+                    return true;
+                }
+                false
+            });
         }
 
         Ok(ack)

@@ -88,6 +88,8 @@ pub enum AckKind {
     Timer,
     #[serde(rename = "manual")]
     Manual,
+    #[serde(rename = "none")]
+    None,
 }
 
 impl RestartStrategy {

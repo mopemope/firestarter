@@ -27,10 +27,11 @@ socket_address = ["127.0.0.1:4000", "127.0.0.1:4001"]
 # set processes environment
 environments=["TEST_A=XXXX", "TEST_B=YYYY"]
 
-# set upgrade ack type. default is timer
-# timer: it will terminate the old process after a certain time
+# set upgrade ack type. this is similar to einhorn 's ACKs. timer is default.
+# timer: it will terminate the old process after a certain time (sec).
 # manual: send ack manually. For details, refer to einhorn's manual ack document
-ack = "manual"
+# none: no ack. simple stop and start
+# ack = "manual"
 
 # set timer ack time in seconds
 # ack_timeout = 2
