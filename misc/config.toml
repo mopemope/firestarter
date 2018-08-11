@@ -31,7 +31,7 @@ environments=["TEST_A=XXXX", "TEST_B=YYYY"]
 # timer: it will terminate the old process after a certain time (sec).
 # manual: send ack manually. For details, refer to einhorn's manual ack document
 # none: no ack. simple stop and start
-# ack = "manual"
+ack = "manual"
 
 # set timer ack time in seconds
 # ack_timeout = 2

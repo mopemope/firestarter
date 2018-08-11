@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/firestarter.svg)](https://crates.io/crates/firestarter)
 [![Patreon](https://img.shields.io/badge/patreon-become%20a%20patron-red.svg)](https://www.patreon.com/mopemope)
 
-Firestarter is simple process and shared socket manager, it designed like [circus][] and [einhorn][].
+Firestarter is simple process and shared socket manager, it designed like [circus][] and [einhorn][], it works with lightweight and faster.
 
 Firestarter can manage groups of processes and shared sockets like [circus][]. And like [einhorn][] we support manual ack.
 And you can control Firestarter daemon, such as increasing worker process from ctrl command.
@@ -70,7 +70,7 @@ numprocesses = 2
 restart = "on-failure"
 
 # set the seconds to delay the startup of the process
-warmup_delay = 1
+# warmup_delay = 1
 
 # start the process immediately without starting the process when connecting the client socket
 start_immediate = true
@@ -81,10 +81,11 @@ socket_address = ["127.0.0.1:4000", "127.0.0.1:4001"]
 # set processes environment
 environments=["TEST_A=XXXX", "TEST_B=YYYY"]
 
-# set upgrade ack type. default is timer
-# timer: it will terminate the old process after a certain time
+# set upgrade ack type. this is similar to einhorn 's ACKs. timer is default.
+# timer: it will terminate the old process after a certain time (sec).
 # manual: send ack manually. For details, refer to einhorn's manual ack document
-ack = "manual"
+# none: no ack. simple stop and start
+# ack = "manual"
 
 # set timer ack time in seconds
 # ack_timeout = 2
@@ -108,6 +109,12 @@ ack = "manual"
 # it will send upgrade command when their command file is modified.
 # it does the same processing as circus.plugins.CommandReloader.
 # auto_upgrade = false
+
+# we will check the existence of the process (experimental).
+# the process needs to periodically update the mtime of the file passed in environment variable FIRESTARTER_WATCH_FILE.
+# the monitoring process kills the process when the mtime update interval exceeds the threshold. this is the same process as gunicorn's worker notify.
+# the unit is seconds, and the default value is 0 (disable live check)
+# live_check_timeout = 60
 
 [web2] # set other worker group name
 
