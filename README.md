@@ -17,6 +17,8 @@ Firestarter uses explicit configuration files rather than complex command line o
 * Easy install
 * Fast and saving memory
 * Using explicit configuration file
+* Support control command like [circus][]
+* Support ack like [einhorn][]
 
 ## Installation
 
