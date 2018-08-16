@@ -12,6 +12,12 @@ Firestarter shares sockets using the `systemd socket passing protocol` (LISTEN_F
 
 Firestarter uses explicit configuration files rather than complex command line options.
 
+## Features
+
+* Easy install
+* Fast and saving memory
+* Using explicit configuration file
+
 ## Installation
 
 You can get `firestarter` by installing it with cargo:
