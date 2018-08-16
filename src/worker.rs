@@ -6,7 +6,7 @@ use std::{io, thread, time};
 use chrono::{DateTime, Duration, Utc};
 use nix::unistd::getpid;
 
-use config::{AckKind, WorkerConfig};
+use config::{AckKind, RestartStrategy, WorkerConfig};
 use logs::RollingLogFile;
 use monitor::{Monitor, OutputKind};
 use process::Process;
@@ -137,6 +137,23 @@ impl<'a> Worker<'a> {
         }
     }
 
+    fn exited(restarter: RestartStrategy, p: &mut Process, respawn: &mut usize) -> (bool) {
+        p.try_wait()
+            .map(|exit_code| {
+                info!(
+                    "exited process [{}]. exit_code [{}]",
+                    p.process_name(),
+                    exit_code
+                );
+                if restarter.need_respawn(exit_code) {
+                    *respawn += 1;
+                    warn!("respawn process scheduled. {}", p.process_name());
+                }
+                true
+            })
+            .unwrap_or(false)
+    }
+
     pub fn health_check(&mut self) -> (usize, usize) {
         if self.processes.is_empty() {
             self.started_at = None;
@@ -144,23 +161,16 @@ impl<'a> Worker<'a> {
         }
 
         let restarter = self.config.restart;
-        let mut respawn: usize = 0;
-        self.processes.drain_filter(|p| {
-            p.try_wait()
-                .map(|exit_code| {
-                    info!(
-                        "exited process [{}]. exit_code [{}]",
-                        p.process_name(),
-                        exit_code
-                    );
-                    if restarter.need_respawn(exit_code) {
-                        respawn += 1;
-                        warn!("respawn process scheduled. {}", p.process_name());
-                    }
-                    true
-                }).unwrap_or(false)
-        });
-        (self.processes.len(), respawn)
+        let respawn = &mut 0;
+        let mut i = 0;
+        while i != self.processes.len() {
+            if Worker::exited(restarter, &mut self.processes[i], respawn) {
+                let _p = self.processes.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        (self.processes.len(), *respawn)
     }
 
     pub fn is_alive(&self) -> bool {
@@ -236,20 +246,30 @@ impl<'a> Worker<'a> {
         Ok(ret)
     }
 
+    fn kill_process(p: &mut Process) -> Option<u32> {
+        if let Err(e) = p.kill() {
+            warn!("fail kill process. cause {}", e);
+            None
+        } else {
+            if let Some(pid) = p.pid() {
+                info!("kill process. pid [{}]", pid);
+                return Some(pid);
+            }
+            None
+        }
+    }
+
     pub fn kill(&mut self) -> io::Result<Vec<u32>> {
         debug!("kill worker processes {}", self.processes.len());
-        let mut res: Vec<u32> = Vec::new();
-        self.processes.drain_filter(|p| {
-            if let Err(err) = p.kill() {
-                warn!("fail kill process. cause {}", err);
-            } else {
-                info!("kill process. pid [{}]", p.pid().unwrap());
-                if let Some(p) = p.pid() {
-                    res.push(p);
-                }
+        let mut res = Vec::new();
+        let mut i = 0;
+        while i != self.processes.len() {
+            if let Some(pid) = Worker::kill_process(&mut self.processes[i]) {
+                res.push(pid);
             }
-            true
-        });
+            self.processes.remove(i);
+            i += 1;
+        }
         self.updated_at = Utc::now();
         Ok(res)
     }
@@ -301,6 +321,15 @@ impl<'a> Worker<'a> {
         Ok(new)
     }
 
+    pub fn is_spawn_fail(p: &mut Process) -> bool {
+        if p.try_wait().is_some() {
+            error!("fail upgrade process. pid [{:?}]", p.pid());
+            true
+        } else {
+            false
+        }
+    }
+
     fn run_timer_ack(
         &mut self,
         monitor: &mut Monitor,
@@ -318,14 +347,16 @@ impl<'a> Worker<'a> {
         thread::sleep(timeout);
         // check new process ACK'd
         let mut failed = 0;
-        self.processes.drain_filter(|p| {
-            if p.try_wait().is_some() {
-                error!("fail upgrade process. pid [{:?}]", p.pid());
+        let mut i = 0;
+        while i != self.processes.len() {
+            if Worker::is_spawn_fail(&mut self.processes[i]) {
+                self.processes.remove(i);
                 failed += 1;
-                return true;
+            } else {
+                i += 1;
             }
-            false
-        });
+        }
+
         while failed > 0 {
             if let Some(p) = old_processes.pop() {
                 // do not terminate old process

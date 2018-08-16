@@ -766,13 +766,14 @@ impl Monitor {
                 ack.push(signal.unwrap_or(default_signal));
             }
 
-            worker.processes.drain_filter(|p| {
-                if p.try_wait().is_some() {
-                    error!("fail upgrade process. pid [{:?}]", p.pid());
-                    return true;
+            let mut i = 0;
+            while i != worker.processes.len() {
+                if Worker::is_spawn_fail(&mut worker.processes[i]) {
+                    let _p = worker.processes.remove(i);
+                } else {
+                    i += 1;
                 }
-                false
-            });
+            }
         }
 
         Ok(ack)

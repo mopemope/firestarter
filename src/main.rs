@@ -1,5 +1,3 @@
-#![feature(drain_filter)]
-
 extern crate chrono;
 extern crate clap;
 extern crate console;
