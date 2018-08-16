@@ -181,37 +181,34 @@ pub fn send_ctrl_command(sock_path: &str, cmd: &CtrlCommand) -> io::Result<Comma
 }
 
 pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> io::Result<Box<ToString>> {
-    if path::Path::new(sock_path).exists() {
-        let pid = getpid();
-        debug!("send command to {}. cmd {:?} pid [{}]", sock_path, cmd, pid);
-        let buf = serde_json::to_string(cmd)?;
-        let mut stream = UnixStream::connect(sock_path)?;
-        stream.write_all(buf.as_bytes())?;
-        stream.write_all(b"\n")?;
-        stream.flush()?;
-        debug!(
-            "sended command to {}. cmd {:?} pid [{}]",
-            sock_path, cmd, pid
-        );
-
-        let mut reader = BufReader::new(&stream);
-        let mut line = String::new();
-        debug!("wait receive command response. pid [{}]", pid);
-        let _len = reader.read_line(&mut line)?;
-        debug!("received response {}. pid [{}]", line, pid);
-
-        if let Ok(res @ ListResponse { .. }) = serde_json::from_str(&line) {
-            return Ok(Box::new(res));
-        }
-
+    if !path::Path::new(sock_path).exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "require sock path",
+        ));
+    }
+    let pid = getpid();
+    debug!("send command to {}. cmd {:?} pid [{}]", sock_path, cmd, pid);
+    let buf = serde_json::to_string(cmd)?;
+    let mut stream = UnixStream::connect(sock_path)?;
+    stream.write_all(buf.as_bytes())?;
+    stream.write_all(b"\n")?;
+    stream.flush()?;
+    debug!(
+        "sended command to {}. cmd {:?} pid [{}]",
+        sock_path, cmd, pid
+    );
+    let mut reader = BufReader::new(&stream);
+    let mut line = String::new();
+    debug!("wait receive command response. pid [{}]", pid);
+    let _len = reader.read_line(&mut line)?;
+    debug!("received response {}. pid [{}]", line, pid);
+    if let Ok(res @ ListResponse { .. }) = serde_json::from_str(&line) {
+        Ok(Box::new(res))
+    } else {
         match serde_json::from_str(&line)? {
             res @ CommandResponse { .. } => Ok(Box::new(res)),
         }
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "require sock path",
-        ))
     }
 }
 
@@ -219,36 +216,35 @@ pub fn send_daemon_list_command(
     sock_path: &str,
     cmd: &DaemonCommand,
 ) -> io::Result<Vec<Box<ToString>>> {
-    if path::Path::new(sock_path).exists() {
-        let pid = getpid();
-        debug!("send command to {}. cmd {:?} pid [{}]", sock_path, cmd, pid);
-        let buf = serde_json::to_string(cmd)?;
-        let mut stream = UnixStream::connect(sock_path)?;
-        stream.write_all(buf.as_bytes())?;
-        stream.write_all(b"\n")?;
-        stream.flush()?;
-        debug!(
-            "sended command to {}. cmd {:?} pid [{}]",
-            sock_path, cmd, pid
-        );
-
-        let mut reader = BufReader::new(&stream);
-        let mut line = String::new();
-        debug!("wait receive command response. pid [{}]", pid);
-        let _len = reader.read_line(&mut line)?;
-        debug!("received response {}. pid [{}]", line, pid);
-        let response: Vec<CommandResponse> = serde_json::from_str(&line)?;
-        let mut res: Vec<Box<ToString>> = Vec::new();
-        for r in response {
-            res.push(Box::new(r));
-        }
-        Ok(res)
-    } else {
-        Err(io::Error::new(
+    if !path::Path::new(sock_path).exists() {
+        return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "require sock path",
-        ))
+        ));
     }
+    let pid = getpid();
+    debug!("send command to {}. cmd {:?} pid [{}]", sock_path, cmd, pid);
+    let buf = serde_json::to_string(cmd)?;
+    let mut stream = UnixStream::connect(sock_path)?;
+    stream.write_all(buf.as_bytes())?;
+    stream.write_all(b"\n")?;
+    stream.flush()?;
+    debug!(
+        "sended command to {}. cmd {:?} pid [{}]",
+        sock_path, cmd, pid
+    );
+
+    let mut reader = BufReader::new(&stream);
+    let mut line = String::new();
+    debug!("wait receive command response. pid [{}]", pid);
+    let _len = reader.read_line(&mut line)?;
+    debug!("received response {}. pid [{}]", line, pid);
+    let response: Vec<CommandResponse> = serde_json::from_str(&line)?;
+    let mut result: Vec<Box<ToString>> = Vec::new();
+    for res in response {
+        result.push(Box::new(res));
+    }
+    Ok(result)
 }
 
 pub fn send_response(stream: &mut UnixStream, res: &CommandResponse) -> io::Result<()> {

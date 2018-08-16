@@ -132,7 +132,7 @@ impl MonitorProcess {
     }
 
     fn listen_fds(&mut self, config: &WorkerConfig) -> Result<Vec<RawFd>, Error> {
-        let mut vec: Vec<RawFd> = Vec::new();
+        let mut fds = Vec::new();
         for addr in &config.socket_address {
             let listen_fd: ListenFd = addr.parse().unwrap();
             debug!("try listen sock {}. pid [{}]", addr, getpid());
@@ -142,9 +142,9 @@ impl MonitorProcess {
                 listen_fd.describe_raw_fd(raw_fd)?,
                 getpid()
             );
-            vec.push(raw_fd);
+            fds.push(raw_fd);
         }
-        Ok(vec)
+        Ok(fds)
     }
 
     fn listen_ctrl_sock(&mut self) -> Result<RawFd, Error> {
@@ -260,6 +260,7 @@ impl MonitorProcess {
             let delay = time::Duration::from_secs(config.warmup_delay);
             thread::sleep(delay);
         }
+
         let pid = self.pid.unwrap();
         info!("launched [{}] monitor process. pid [{}]", worker.name, pid);
         // 1. close all fd
