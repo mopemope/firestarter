@@ -1,10 +1,12 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::{fs, io};
+
+use nix::unistd::getpid;
 
 use app::APP_NAME_UPPER;
 use config::WorkerConfig;
@@ -120,9 +122,9 @@ impl Process {
                 self.child = Some(child);
                 Ok(())
             }
-            Err(err) => {
-                error!("fail spawn process. cause {}. command {}", err, &cmd[0]);
-                Err(err)
+            Err(e) => {
+                error!("fail spawn process command {}. caused by: {}", &cmd[0], e);
+                Err(e)
             }
         }
     }
@@ -174,7 +176,7 @@ impl Process {
             }
             Ok(None) => None,
             Err(e) => {
-                error!("fail {:?}", e);
+                error!("fail process wait. caused by: {}", e);
                 Process::remove_watch_file(watch_file);
                 Some(-1)
             }
@@ -184,7 +186,7 @@ impl Process {
     fn remove_watch_file(watch_file: &Option<PathBuf>) {
         if let Some(ref watch_file) = watch_file {
             if let Err(e) = fs::remove_file(watch_file) {
-                warn!("fail remove watch file {:?}. cause {:?}", watch_file, e);
+                warn!("fail remove watch file {:?}. caused by: {}", watch_file, e);
             } else {
                 info!("remove watch file {:?}", watch_file);
             }
@@ -209,7 +211,7 @@ impl Process {
         match timeout_process(timeout, name, id) {
             Ok(ret) => ret,
             Err(e) => {
-                warn!("fail get mtime. cause {:?}", e);
+                warn!("fail get mtime. caused by: {}", e);
                 false
             }
         }
@@ -230,5 +232,73 @@ impl Process {
 
     pub fn child(&mut self) -> Option<&Child> {
         self.child.as_ref()
+    }
+}
+
+pub fn run_upgrader(upgrader: &[String]) -> io::Result<Child> {
+    let self_pid = getpid();
+    let mut process = Command::new(&upgrader[0]);
+    info!("start upgrader. pid [{}]", self_pid);
+    process.args(&upgrader[1..]);
+    process.stdin(Stdio::null());
+    process.stdout(Stdio::piped());
+    process.stderr(Stdio::piped());
+    let child = match process.spawn() {
+        Ok(mut child) => {
+            child.try_wait()?;
+            info!(
+                "running upgrader process [{}]. pid [{}]",
+                &upgrader[0],
+                child.id()
+            );
+            child
+        }
+        Err(e) => {
+            error!(
+                "fail spawn upgrader process. caused by: {}. command {}",
+                e, &upgrader[0]
+            );
+            return Err(e);
+        }
+    };
+    Ok(child)
+}
+
+pub fn process_exited(p: &mut Process) -> bool {
+    p.try_wait().is_some()
+}
+
+pub fn process_normally_exited(p: &mut Child) -> io::Result<bool> {
+    let status = p.try_wait()?;
+    match status {
+        Some(status) => if status.success() {
+            Ok(true)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "process exit_code is not 0",
+            ))
+        },
+        _ => Ok(false),
+    }
+}
+
+pub fn process_output(p: &mut Child) {
+    let pid = p.id();
+    if let Some(ref mut stdout) = p.stdout {
+        let mut buf = String::new();
+        if let Ok(size) = stdout.read_to_string(&mut buf) {
+            if size > 0 {
+                info!("process stdout. pid [{}]\n{}", pid, buf);
+            }
+        }
+    }
+    if let Some(ref mut stderr) = p.stderr {
+        let mut buf = String::new();
+        if let Ok(size) = stderr.read_to_string(&mut buf) {
+            if size > 0 {
+                info!("process stderr. pid [{}]\n {}", pid, buf);
+            }
+        }
     }
 }

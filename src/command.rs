@@ -127,7 +127,7 @@ pub fn read_daemon_command(stream: &mut UnixStream) -> io::Result<DaemonCommand>
     debug!("receive daemon command {:?}. pid [{}]", line, pid);
     match serde_json::from_str(&line) {
         Err(e) => {
-            warn!("ctrl socket error {:?}. pid [{}]", e, pid);
+            warn!("ctrl socket error. caused by: {}. pid [{}]", e, pid);
             Err(io::Error::new(io::ErrorKind::InvalidInput, e))
         }
         Ok(cmd) => {
@@ -145,7 +145,7 @@ pub fn read_command(stream: &UnixStream) -> io::Result<CtrlCommand> {
     debug!("receive command {:?}. pid [{}]", line, pid);
     match serde_json::from_str(&line) {
         Err(e) => {
-            warn!("fail deserialize command. cause {:?}. pid [{}]", e, pid);
+            warn!("fail deserialize command. caused by: {}. pid [{}]", e, pid);
             Err(io::Error::new(io::ErrorKind::InvalidInput, e))
         }
         Ok(cmd) => {

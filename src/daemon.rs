@@ -16,6 +16,7 @@ use serde_json;
 use command::*;
 use config::Config;
 use monitor::{ExitStatus, MonitorProcess};
+use process::{process_normally_exited, process_output, run_upgrader};
 use reloader;
 use sock::ListenFd;
 
@@ -107,26 +108,44 @@ impl Daemon {
         Ok(())
     }
 
+    fn check_upgrade(&mut self) -> io::Result<()> {
+        for (name, monitor) in &mut self.monitors {
+            let config = &self.config.workers[name];
+            if let Some(timeout) = config.upgrader_active_sec {
+                if monitor.is_upgrade_active_time(timeout) {
+                    if let Some(ref upgrader) = config.upgrader {
+                        if monitor.upgrade_process.is_none() {
+                            let mut proc = run_upgrader(upgrader)?;
+                            monitor.upgrade_process = Some(proc);
+                        }
+                    }
+                    monitor.upgrade_active_time = time::SystemTime::now();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn check_cmd_modified(&mut self) -> io::Result<()> {
+        let pid = getpid();
         for (name, monitor) in &mut self.monitors {
             let config = &self.config.workers[name];
             if config.auto_upgrade {
                 let modified =
                     reloader::is_modified_cmd(&config, &monitor.cmd_path, &monitor.cmd_mtime)?;
                 if modified {
+                    info!("program upgrade detected. start upgrade. pid [{}]", pid);
                     // start upgrade
-                    {
-                        // send upgrade command
-                        let upgrade_cmd = CtrlCommand {
-                            command: Command::Upgrade,
-                            pid: pid_t::from(self.pid) as u32,
-                            signal: None,
-                        };
-                        let sock_path = config.control_sock(&name);
-                        let res = send_ctrl_command(&sock_path, &upgrade_cmd)?;
-                        let _buf = serde_json::to_string(&res)?;
-                    }
-                    // update
+                    let upgrade_cmd = CtrlCommand {
+                        command: Command::Upgrade,
+                        pid: pid_t::from(self.pid) as u32,
+                        signal: None,
+                    };
+                    let sock_path = config.control_sock(&name);
+                    let res = send_ctrl_command(&sock_path, &upgrade_cmd)?;
+                    let _buf = serde_json::to_string(&res)?;
+
                     let cmd_path = reloader::cmd_path(config);
                     let metadata = cmd_path.metadata()?;
                     let cmd_mtime = metadata.modified()?;
@@ -151,11 +170,12 @@ impl Daemon {
         )?;
 
         // start loop
-        let mut events = Events::with_capacity(16);
+        let mut now = time::SystemTime::now();
+        let mut events = Events::with_capacity(128);
         while !self.monitors.is_empty() {
-            if let Err(err) = poll.poll_interruptible(&mut events, Some(timeout)) {
+            if let Err(e) = poll.poll_interruptible(&mut events, Some(timeout)) {
                 // Interrupt
-                debug!("interrupt main loop. cause {:?} pid [{}]", err, self.pid);
+                debug!("interrupt main loop. caused by: {} pid [{}]", e, self.pid);
                 self.clean_process();
                 return Ok(());
             }
@@ -172,16 +192,91 @@ impl Daemon {
                 }
             }
 
-            if let Err(err) = self.check_cmd_modified() {
-                warn!("fail check modified command. cause {:?}", err);
-            }
-
-            if let Err(_err) = self.check_process() {
-                // error!("{:?}", err);
+            // check every 1sec
+            if let Ok(elapsed) = now.elapsed() {
+                if elapsed.as_secs() >= 1 {
+                    if let Err(e) = self.check_cmd_modified() {
+                        warn!("fail check modified command. caused by: {}", e);
+                    }
+                    if let Err(e) = self.check_upgrade() {
+                        warn!("fail check upgrade. caused by: {}", e);
+                    }
+                    if let Err(e) = self.check_upgrader_process() {
+                        warn!("fail check upgrader process. caused by: {}", e);
+                    }
+                    if let Err(e) = self.check_monitor_processes() {
+                        warn!("fail check monitor process. caused by: {}", e);
+                    }
+                    now = time::SystemTime::now();
+                }
             }
         }
         self.clean_process();
         info!("exited daemon. pid [{}]", self.pid);
+        Ok(())
+    }
+
+    fn clean_upgrade_process(&mut self, success: Vec<String>) {
+        for name in success {
+            if let Some(monitor) = self.monitors.get_mut(&name) {
+                monitor.upgrade_process.take();
+            }
+        }
+    }
+
+    fn check_upgrader_process(&mut self) -> io::Result<()> {
+        let mut need_clean = Vec::new();
+        for (name, monitor) in &mut self.monitors {
+            if let Some(ref mut p) = monitor.upgrade_process {
+                let config = &self.config.workers[name];
+                match process_normally_exited(p) {
+                    Ok(true) => {
+                        process_output(p);
+                        info!(
+                            "upgrade process terminated successfully. start upgrade pid [{}]",
+                            p.id()
+                        );
+                        let upgrade_cmd = CtrlCommand {
+                            command: Command::Upgrade,
+                            pid: pid_t::from(self.pid) as u32,
+                            signal: None,
+                        };
+                        monitor.upgrade_active_time = time::SystemTime::now();
+                        let sock_path = config.control_sock(&name);
+                        let res = send_ctrl_command(&sock_path, &upgrade_cmd)?;
+                        let _buf = serde_json::to_string(&res)?;
+                        need_clean.push(name.to_owned());
+                    }
+                    Ok(false) => {
+                        if let Ok(elapsed) = monitor.upgrade_active_time.elapsed() {
+                            if elapsed.as_secs() > config.upgrader_timeout {
+                                // timeout upgrade
+                                if let Err(e) = p.kill() {
+                                    warn!(
+                                        "fail kill upgrader process pid [{}]. caused by: {}",
+                                        p.id(),
+                                        e
+                                    );
+                                }
+                                warn!(
+                                    "upgrader process timeout. kill upgrader process pid [{}]",
+                                    p.id()
+                                );
+                                monitor.upgrade_active_time = time::SystemTime::now();
+                                need_clean.push(name.to_owned());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("upgrade process terminated abnormally. caused by: {}", e);
+                        monitor.upgrade_active_time = time::SystemTime::now();
+                        need_clean.push(name.to_owned());
+                    }
+                }
+            }
+        }
+
+        self.clean_upgrade_process(need_clean);
         Ok(())
     }
 
@@ -199,8 +294,11 @@ impl Daemon {
                 Ok(ExitStatus::Restart) => {
                     restart_keys.push(name.to_owned());
                 }
-                Err(err) => {
-                    error!("exited monitor [{}] process. cause {}", monitor.name, err);
+                Err(e) => {
+                    error!(
+                        "exited monitor [{}] process. caused by: {}",
+                        monitor.name, e
+                    );
                     exit_keys.push(name.to_owned());
                 }
                 _ => {}
@@ -219,9 +317,9 @@ impl Daemon {
         restart_keys
     }
 
-    fn check_process(&mut self) -> Result<(), Error> {
-        let names = self.check_monitors();
-        for name in &names {
+    fn check_monitor_processes(&mut self) -> Result<(), Error> {
+        let restarts = self.check_monitors();
+        for name in &restarts {
             if let Some(config) = self.config.workers.get(name) {
                 info!("wait respawn monitor process [{}]", name);
                 let timeout = time::Duration::from_secs(1);
@@ -237,17 +335,14 @@ impl Daemon {
 
     fn clean_process(&mut self) {
         for mon in self.monitors.values_mut() {
-            if let Err(_err) = mon.kill_all() {
-                // ignore cleanup error
-                // warn!("Fail kill all {} monitor. cause {:?}", name, err);
-            }
+            if let Err(_e) = mon.kill_all() {}
         }
-        if let Err(err) = self.check_process() {
-            error!("fail spwan monitor process. cause {:?}", err);
+        if let Err(e) = self.check_monitor_processes() {
+            error!("fail spwan monitor process. caused by: {}", e);
         }
         while !self.monitors.is_empty() {
-            if let Err(err) = self.check_process() {
-                error!("fail spwan monitor process. cause {:?}", err);
+            if let Err(e) = self.check_monitor_processes() {
+                error!("fail spwan monitor process. caused by: {}", e);
             }
             let delay = time::Duration::from_secs(1);
             thread::sleep(delay);
@@ -297,8 +392,8 @@ impl Drop for Daemon {
         for (name, config) in &self.config.workers {
             let sock_path = config.control_sock(name);
             if path::Path::new(&sock_path).exists() {
-                if let Err(err) = fs::remove_file(&sock_path) {
-                    warn!("fail remove control socket. cause {:?}", err);
+                if let Err(e) = fs::remove_file(&sock_path) {
+                    warn!("fail remove control socket. caused by: {}", e);
                 } else {
                     info!("remove control socket. {:?}", &sock_path);
                 }
@@ -306,8 +401,8 @@ impl Drop for Daemon {
         }
         let path = &self.config.control_sock;
         if path::Path::new(path).exists() {
-            if let Err(err) = fs::remove_file(path) {
-                warn!("fail remove control socket. cause {:?}", err);
+            if let Err(e) = fs::remove_file(path) {
+                warn!("fail remove control socket. caused by: {:?}", e);
             } else {
                 info!("remove control socket. {:?}", path);
             }

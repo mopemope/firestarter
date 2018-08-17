@@ -48,6 +48,13 @@ pub struct WorkerConfig {
     pub auto_upgrade: bool,
     #[serde(default = "default_zero")]
     pub live_check_timeout: u64,
+
+    pub upgrader: Option<Vec<String>>,
+    #[serde(skip, default = "default_run_upgrader")]
+    pub run_upgrader: RunUpgrader,
+    pub upgrader_active_sec: Option<u64>,
+    #[serde(default = "default_upgrader_timeout")]
+    pub upgrader_timeout: u64,
 }
 
 fn default_bool() -> bool {
@@ -71,6 +78,12 @@ fn default_ack() -> AckKind {
 fn default_restart() -> RestartStrategy {
     RestartStrategy::None
 }
+fn default_run_upgrader() -> RunUpgrader {
+    RunUpgrader::None
+}
+fn default_upgrader_timeout() -> u64 {
+    300
+}
 
 #[derive(Debug, Deserialize, Clone, Copy)]
 pub enum RestartStrategy {
@@ -90,6 +103,19 @@ pub enum AckKind {
     Manual,
     #[serde(rename = "none")]
     None,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+pub enum RunUpgrader {
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "on-upgrade")]
+    OnUpgrade,
+    #[serde(rename = "on-active-sec")]
+    OnActiveSec,
+    // TODO schedule upgrade
+    // #[serde(rename = "on-calendar")]
+    // OnCalendar,
 }
 
 impl RestartStrategy {
@@ -132,9 +158,10 @@ pub fn parse_config(path: String) -> io::Result<Config> {
         workers: HashMap::new(),
     };
 
-    let wrkrs: HashMap<String, WorkerConfig> = from_str(&config_toml).expect("toml parse error");
+    let mut wrkrs: HashMap<String, WorkerConfig> =
+        from_str(&config_toml).expect("toml parse error");
 
-    for wrk_config in wrkrs.values() {
+    for wrk_config in &mut wrkrs.values_mut() {
         // validate config
         if let Some(ref stdout) = wrk_config.stdout_log {
             let _stdout_log: RollingLogFile = stdout.parse().unwrap();
@@ -142,6 +169,15 @@ pub fn parse_config(path: String) -> io::Result<Config> {
         if let Some(ref stderr) = wrk_config.stderr_log {
             let _stderr_log: RollingLogFile = stderr.parse().unwrap();
         }
+
+        if let Some(ref _upgrader) = wrk_config.upgrader {
+            if wrk_config.upgrader_active_sec.is_some() {
+                wrk_config.run_upgrader = RunUpgrader::OnActiveSec;
+            } else {
+                wrk_config.run_upgrader = RunUpgrader::OnUpgrade;
+            }
+        }
+
         debug!("{:?}", wrk_config);
     }
     config.workers = wrkrs;

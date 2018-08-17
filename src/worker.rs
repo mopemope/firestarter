@@ -6,10 +6,10 @@ use std::{io, thread, time};
 use chrono::{DateTime, Duration, Utc};
 use nix::unistd::getpid;
 
-use config::{AckKind, RestartStrategy, WorkerConfig};
+use config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
 use logs::RollingLogFile;
 use monitor::{Monitor, OutputKind};
-use process::Process;
+use process::{process_exited, run_upgrader, Process};
 use signal::{Signal, SignalSend};
 
 // #[derive(Debug)]
@@ -137,11 +137,15 @@ impl<'a> Worker<'a> {
         }
     }
 
-    fn exited(restarter: RestartStrategy, p: &mut Process, respawn: &mut usize) -> (bool) {
+    fn process_health_check(
+        restarter: RestartStrategy,
+        p: &mut Process,
+        respawn: &mut usize,
+    ) -> (bool) {
         p.try_wait()
             .map(|exit_code| {
                 info!(
-                    "exited process [{}]. exit_code [{}]",
+                    "detect exited process {}. exit_code [{}]",
                     p.process_name(),
                     exit_code
                 );
@@ -164,7 +168,7 @@ impl<'a> Worker<'a> {
         let respawn = &mut 0;
         let mut i = 0;
         while i != self.processes.len() {
-            if Worker::exited(restarter, &mut self.processes[i], respawn) {
+            if Worker::process_health_check(restarter, &mut self.processes[i], respawn) {
                 let _p = self.processes.remove(i);
             } else {
                 i += 1;
@@ -236,8 +240,8 @@ impl<'a> Worker<'a> {
         if let Some(mut p) = self.processes.pop() {
             if let Some(pid) = p.pid() {
                 ret = pid;
-                if let Err(err) = pid.signal(signal) {
-                    warn!("fail send signal process. cause {}", err);
+                if let Err(e) = pid.signal(signal) {
+                    warn!("fail send signal process. caused by: {}", e);
                 } else {
                     info!("send signal process. pid [{}]", pid);
                 }
@@ -248,7 +252,7 @@ impl<'a> Worker<'a> {
 
     fn kill_process(p: &mut Process) -> Option<u32> {
         if let Err(e) = p.kill() {
-            warn!("fail kill process. cause {}", e);
+            warn!("fail kill process. caused by: {}", e);
             None
         } else {
             if let Some(pid) = p.pid() {
@@ -279,8 +283,11 @@ impl<'a> Worker<'a> {
         for p in &mut self.processes {
             let pid = p.pid().unwrap();
             debug!("send signal {:?}. {}", sig, p.process_name());
-            if let Err(err) = pid.signal(sig) {
-                warn!("fail send signal {:?} to pid [{}]. cause {}", sig, pid, err);
+            if let Err(e) = pid.signal(sig) {
+                warn!(
+                    "fail send signal {:?} to pid [{}]. caused by: {}",
+                    sig, pid, e
+                );
             } else {
                 info!("send signal {:?} to pid [{}]", sig, pid);
                 if sig == Signal::SIGTERM || sig == Signal::SIGKILL {
@@ -321,15 +328,6 @@ impl<'a> Worker<'a> {
         Ok(new)
     }
 
-    pub fn is_spawn_fail(p: &mut Process) -> bool {
-        if p.try_wait().is_some() {
-            error!("fail upgrade process. pid [{:?}]", p.pid());
-            true
-        } else {
-            false
-        }
-    }
-
     fn run_timer_ack(
         &mut self,
         monitor: &mut Monitor,
@@ -349,8 +347,9 @@ impl<'a> Worker<'a> {
         let mut failed = 0;
         let mut i = 0;
         while i != self.processes.len() {
-            if Worker::is_spawn_fail(&mut self.processes[i]) {
-                self.processes.remove(i);
+            if process_exited(&mut self.processes[i]) {
+                let mut p = self.processes.remove(i);
+                info!("exited process {}", p.process_name(),);
                 failed += 1;
             } else {
                 i += 1;
@@ -375,8 +374,8 @@ impl<'a> Worker<'a> {
         thread::sleep(time::Duration::from_secs(1));
         while let Some(ref mut p) = old_processes.pop() {
             if p.try_wait().is_none() {
-                if let Err(err) = p.kill() {
-                    warn!("fail old kill process. cause {:?}", err);
+                if let Err(e) = p.kill() {
+                    warn!("fail old kill process. caused by: {}", e);
                 }
                 warn!("no reaction. killed old process {}", p.process_name(),);
             }
@@ -423,8 +422,8 @@ impl<'a> Worker<'a> {
         thread::sleep(time::Duration::from_secs(1));
         while let Some(ref mut p) = tmp.pop() {
             if p.try_wait().is_none() {
-                if let Err(err) = p.kill() {
-                    warn!("fail kill old process. cause {:?}", err);
+                if let Err(e) = p.kill() {
+                    warn!("fail kill old process. caused by: {}", e);
                 }
                 warn!("no reaction. killed old process {}", p.process_name());
             }
@@ -456,8 +455,8 @@ impl<'a> Worker<'a> {
         thread::sleep(time::Duration::from_secs(1));
         while let Some(ref mut p) = self.processes.pop() {
             if p.try_wait().is_none() {
-                if let Err(err) = p.kill() {
-                    warn!("fail old kill process. cause {:?}", err);
+                if let Err(e) = p.kill() {
+                    warn!("fail old kill process. caused by: {}", e);
                 }
                 warn!("no reaction. killed old process {}", p.process_name(),);
             }
@@ -473,18 +472,29 @@ impl<'a> Worker<'a> {
         signal: Signal,
     ) -> io::Result<(Vec<u32>, Vec<u32>)> {
         let self_pid = getpid();
-
         if !self.active {
-            let new = Vec::new();
-            let old = Vec::new();
+            let new_pid = Vec::new();
+            let old_pid = Vec::new();
             warn!(
                 "worker not active [{}] worker. pid [{}]",
                 self.name, self_pid
             );
-            return Ok((new, old));
+            return Ok((new_pid, old_pid));
         }
 
         info!("start upgrade [{}] worker. pid [{}]", self.name, self_pid);
+        if self.config.run_upgrader == RunUpgrader::OnUpgrade {
+            if let Some(ref upgrader) = self.config.upgrader {
+                let mut proc = run_upgrader(upgrader)?;
+                if !monitor.wait_on_upgrader(self, &mut proc)? {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "upgrade process terminated abnormally",
+                    ));
+                }
+            }
+        }
+
         let result = match self.config.ack {
             AckKind::Timer => self.run_timer_ack(monitor, signal)?,
             AckKind::Manual => self.run_manual_ack(monitor, signal)?,
@@ -493,7 +503,7 @@ impl<'a> Worker<'a> {
 
         self.updated_at = Utc::now();
         info!(
-            "finish upgrade [{}] worker. new_pid {:?} old_pid {:?}. pid [{}]",
+            "success upgrade [{}] worker. new_pid {:?} old_pid {:?}. pid [{}]",
             self.name, result.0, result.1, self_pid
         );
         Ok(result)
@@ -513,8 +523,8 @@ impl<'a> Worker<'a> {
             if p.check_live_timeout(self.config.live_check_timeout) {
                 // timeout process
                 if let Some(pid) = p.pid() {
-                    if let Err(err) = p.kill() {
-                        warn!("fail kill process. cause {}", err);
+                    if let Err(e) = p.kill() {
+                        warn!("fail kill process. caused by: {}", e);
                     } else {
                         info!("kill process. pid [{}]", pid);
                     }

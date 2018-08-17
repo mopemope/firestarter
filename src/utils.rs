@@ -69,7 +69,7 @@ pub fn timeout_process(timeout: u64, name: &str, id: u64) -> io::Result<bool> {
             sec > timeout
         }
         Err(e) => {
-            warn!("fail get elapsed. cause {:?}", e);
+            warn!("fail get elapsed. caused by: {}", e);
             false
         }
     };

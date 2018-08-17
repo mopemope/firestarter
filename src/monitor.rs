@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::net::UnixListener;
-use std::process::exit;
+use std::process::{exit, Child};
 use std::string::String;
 use std::{env, fs, io, path, thread, time};
 
@@ -18,6 +18,7 @@ use nix::unistd::{close, fork, getpid, ForkResult, Pid};
 use app::{APP_NAME, APP_NAME_UPPER};
 use command::*;
 use config::WorkerConfig;
+use process::{process_exited, process_output};
 use reloader;
 use signal::{Signal, SignalSend};
 use sock::ListenFd;
@@ -50,6 +51,8 @@ pub struct MonitorProcess {
     pub listen_fd: Vec<RawFd>,
     pub cmd_path: path::PathBuf,
     pub cmd_mtime: time::SystemTime,
+    pub upgrade_process: Option<Child>,
+    pub upgrade_active_time: time::SystemTime,
 }
 
 fn close_fds() {
@@ -57,7 +60,7 @@ fn close_fds() {
         let fd = i as RawFd;
         // ignore
         if let Err(e) = close(fd) {
-            trace!("fd close err {:?}", e);
+            trace!("fd close err {}", e);
         }
     }
 }
@@ -83,13 +86,28 @@ impl MonitorProcess {
             listen_fd: Vec::new(),
             cmd_path,
             cmd_mtime,
+            upgrade_process: None,
+            upgrade_active_time: time::SystemTime::now(),
+        }
+    }
+
+    pub fn is_upgrade_active_time(&mut self, timeout: u64) -> bool {
+        match self.upgrade_active_time.elapsed() {
+            Ok(elapsed) => {
+                let sec = elapsed.as_secs();
+                sec > timeout
+            }
+            Err(e) => {
+                warn!("fail get elapsed. caused by: {}", e);
+                false
+            }
         }
     }
 
     fn close_listen_fd(&self) {
         for fd in &self.listen_fd {
-            if let Err(err) = close(*fd) {
-                trace!("fail close fd. {:?} {}", err, fd);
+            if let Err(e) = close(*fd) {
+                trace!("fail close fd {}. caused by: {}", fd, e);
             }
         }
     }
@@ -97,8 +115,8 @@ impl MonitorProcess {
     pub fn remove_ctrl_sock(&self) {
         let sock_path = &self.sock_path;
         if path::Path::new(sock_path).exists() {
-            if let Err(err) = fs::remove_file(&sock_path) {
-                warn!("fail remove control socket {}. cause {:?}", sock_path, err);
+            if let Err(e) = fs::remove_file(&sock_path) {
+                warn!("fail remove control socket {}. caused by: {}", sock_path, e);
             } else {
                 info!("remove control socket. {:?}", &sock_path);
             }
@@ -113,12 +131,14 @@ impl MonitorProcess {
                     match entry {
                         Ok(ref path) => {
                             if let Err(e) = fs::remove_file(path) {
-                                warn!("fail remove watch file {:?}. cause {:?}", path, e);
+                                warn!("fail remove watch file {:?}. caused by: {}", path, e);
                             } else {
                                 info!("remove watch file {:?}", path);
                             }
                         }
-                        Err(_e) => {}
+                        Err(e) => {
+                            warn!("fail get path. caused by: {}", e);
+                        }
                     }
                 }
             }
@@ -209,9 +229,9 @@ impl MonitorProcess {
                 }
             }
             Ok(_) => Ok(ExitStatus::ForceExit),
-            Err(err) => Err(err_msg(format!(
-                "fail monitor process wait. cause {}. pid [{:?}]",
-                err, self_pid
+            Err(e) => Err(err_msg(format!(
+                "fail monitor process wait. caused by: {}. pid [{:?}]",
+                e, self_pid
             ))),
         }
     }
@@ -228,17 +248,17 @@ impl MonitorProcess {
                 self.pid = Some(getpid());
                 let mut worker = Worker::new(name, config);
 
-                if let Err(err) = self.start(&key, &mut worker, config) {
+                if let Err(e) = self.start_monitoring(&key, &mut worker, config) {
                     // do cleanup
-                    warn!("fail monitor start. cause {}", err);
-                    return Err(err);
+                    warn!("fail monitor start. caused by: {}", e);
+                    return Err(e);
                 }
                 Ok(false)
             }
         }
     }
 
-    pub fn start(
+    fn start_monitoring(
         &mut self,
         key: &str,
         worker: &mut Worker,
@@ -306,7 +326,17 @@ impl MonitorProcess {
             }
         }
         // 6. monitor.run
-        monitor.start(worker)?;
+        if let Err(e) = monitor.start(worker) {
+            // error occuer cleanup worker process
+            if let Err(e) = worker.signal_all(Signal::SIGTERM) {
+                warn!("fail send signal SIGTERM. caused by: {}", e);
+            }
+            if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
+                exit(-1);
+            }
+            return Err(e);
+        }
+
         Ok(false)
     }
 
@@ -325,10 +355,10 @@ impl MonitorProcess {
                 "signal [{:?}] monitor [{}]. pid [{}]",
                 signal, self.name, pid
             );
-            if let Err(err) = pid.signal(signal) {
+            if let Err(e) = pid.signal(signal) {
                 warn!(
-                    "fail signal [{:?}] monitor [{}]. cause {:?}. pid [{}]",
-                    signal, self.name, err, pid
+                    "fail signal [{:?}] monitor [{}]. caused by: {}. pid [{}]",
+                    signal, self.name, e, pid
                 );
             }
         }
@@ -534,14 +564,14 @@ impl Monitor {
 
         match self.exec_command(command, *signal, worker) {
             Ok(res) => res,
-            Err(err) => {
-                error!("fail exec command. cause {:?} pid [{}]", err, self.pid);
+            Err(e) => {
+                error!("fail exec command. caused by: {} pid [{}]", e, self.pid);
                 let pid = libc::pid_t::from(self.pid);
                 CommandResponse {
                     status: Status::Error,
                     command: Command::None,
                     pid: pid as u32,
-                    message: err.to_string(),
+                    message: format!("error: {}", e.to_string()),
                 }
             }
         }
@@ -565,8 +595,8 @@ impl Monitor {
                         worker.run(self)?;
                     }
                 }
-                if let Err(err) = self.process_ctrl_event(token, worker) {
-                    warn!("fail process ctrl event. cause {:?}", err);
+                if let Err(e) = self.process_ctrl_event(token, worker) {
+                    warn!("fail process ctrl event. caused by: {}", e);
                 }
             }
         }
@@ -648,13 +678,8 @@ impl Monitor {
             let cmd = read_command(&stream)?;
             let res = self.send_ctrl_command(&cmd, worker);
             match res.command {
-                Command::Ack => {
-                    // ignore ack response
-                    debug!("skip ack response");
-                }
-                _ => {
-                    send_response(&mut stream, &res)?;
-                }
+                Command::Ack => debug!("ignore ack response.it is not an upgrade"),
+                _ => send_response(&mut stream, &res)?,
             }
         }
         Ok(())
@@ -664,13 +689,13 @@ impl Monitor {
         info!("start [{}] monitor. pid [{}]", worker.name, self.pid);
         self.active = true;
         // listen activate socket
-        if let Err(err) = self.wait_activate_socket(worker) {
+        if let Err(e) = self.wait_activate_socket(worker) {
             error!(
-                "fail spawn process [{}] monitor. cause {:?}",
-                worker.name, err
+                "fail spawn process [{}] monitor. caused by: {}",
+                worker.name, e
             );
             info!("exited [{}] monitor. pid [{}]", worker.name, self.pid);
-            return Err(err);
+            return Err(e);
         };
 
         let mut fail = 0;
@@ -680,57 +705,44 @@ impl Monitor {
 
         while self.active {
             let mut alive = true;
-            match self.poll.poll_interruptible(&mut events, timeout) {
-                Ok(size) => {
-                    for event in &events {
-                        let token = event.token();
-                        // catch err ?
-                        if self.process_log_event(worker, token)? {
-                            alive = false;
-                            self.io_events.remove(&token);
-                        }
-                        if let Err(err) = self.process_ctrl_event(token, worker) {
-                            warn!(
-                                "fail process ctrl event. cause {:?} pid [{}]",
-                                err, self.pid
-                            );
-                        }
-                    }
-
-                    if let Ok(elapsed) = now.elapsed() {
-                        if elapsed.as_secs() > 1 {
-                            worker.check_live_processes();
-                            now = time::SystemTime::now();
-                        }
-                    }
-                    if alive && size > 0 {
-                        continue;
-                    }
-                    let (_alive, respawn) = worker.health_check();
-                    for _ in 0..respawn {
-                        if let Err(err) = worker.run_process(self) {
-                            error!("respawn error. cause {} pid [{}]", err, self.pid);
-                            fail += 1;
-                            if self.giveup != 0 && fail >= self.giveup {
-                                // giveup !!
-                                self.active = false;
-                                error!("GIVEUP! the process can not started. pid [{}]", self.pid);
-                            }
-                        } else {
-                            // reset
-                            fail = 0;
-                        }
-                    }
+            let size = self.poll.poll_interruptible(&mut events, timeout)?;
+            for event in &events {
+                let token = event.token();
+                // catch err ?
+                if self.process_log_event(worker, token)? {
+                    alive = false;
+                    self.io_events.remove(&token);
                 }
-                Err(err) => {
-                    // cleanup
-                    if let Err(err) = worker.signal_all(Signal::SIGTERM) {
-                        warn!("fail send signal SIGTERM. cause {:?}", err);
+                if let Err(e) = self.process_ctrl_event(token, worker) {
+                    warn!(
+                        "fail process ctrl event. caused by: {} pid [{}]",
+                        e, self.pid
+                    );
+                }
+            }
+
+            if let Ok(elapsed) = now.elapsed() {
+                if elapsed.as_secs() > 1 {
+                    worker.check_live_processes();
+                    now = time::SystemTime::now();
+                }
+            }
+            if alive && size > 0 {
+                continue;
+            }
+            let (_alive, respawn) = worker.health_check();
+            for _ in 0..respawn {
+                if let Err(e) = worker.run_process(self) {
+                    error!("respawn error. caused by: {} pid [{}]", e, self.pid);
+                    fail += 1;
+                    if self.giveup != 0 && fail >= self.giveup {
+                        // giveup !!
+                        self.active = false;
+                        error!("GIVEUP! the process can not started. pid [{}]", self.pid);
                     }
-                    if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
-                        exit(-1);
-                    }
-                    return Err(err);
+                } else {
+                    // reset
+                    fail = 0;
                 }
             }
         }
@@ -749,13 +761,13 @@ impl Monitor {
         let timeout = Some(time::Duration::from_secs(1));
         let mut count = 0;
         while ack.is_empty() && count < 10 {
-            if let Err(err) = self.poll.poll_interruptible(&mut events, timeout) {
+            if let Err(e) = self.poll.poll_interruptible(&mut events, timeout) {
                 // cleanup
                 worker.signal_all(Signal::SIGTERM)?;
                 if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
                     exit(-1);
                 }
-                return Err(err);
+                return Err(e);
             }
             count += 1;
             for event in &events {
@@ -769,8 +781,9 @@ impl Monitor {
 
             let mut i = 0;
             while i != worker.processes.len() {
-                if Worker::is_spawn_fail(&mut worker.processes[i]) {
-                    let _p = worker.processes.remove(i);
+                if process_exited(&mut worker.processes[i]) {
+                    let mut p = worker.processes.remove(i);
+                    info!("exited process {}", p.process_name(),);
                 } else {
                     i += 1;
                 }
@@ -778,5 +791,78 @@ impl Monitor {
         }
 
         Ok(ack)
+    }
+
+    pub fn wait_on_upgrader(
+        &mut self,
+        worker: &mut Worker,
+        upgrader: &mut Child,
+    ) -> io::Result<bool> {
+        let timeout = Some(time::Duration::from_secs(1));
+        let mut events = Events::with_capacity(1024);
+        let mut now = time::SystemTime::now();
+        let upgrade_timeout = time::SystemTime::now();
+
+        loop {
+            if let Err(e) = self.poll.poll_interruptible(&mut events, timeout) {
+                if let Err(e) = worker.signal_all(Signal::SIGTERM) {
+                    warn!("fail send signal SIGTERM. caused by: {:?}", e);
+                }
+                if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
+                    exit(-1);
+                }
+                return Err(e);
+            }
+            for event in &events {
+                let token = event.token();
+                if self.process_log_event(worker, token)? {
+                    self.io_events.remove(&token);
+                }
+            }
+
+            if let Ok(elapsed) = now.elapsed() {
+                if elapsed.as_secs() >= 1 {
+                    worker.check_live_processes();
+                    match upgrader.try_wait() {
+                        Ok(Some(status)) => {
+                            process_output(upgrader);
+                            if status.success() {
+                                info!(
+                                    "upgrade process terminated successfully. start upgrade pid [{}]",
+                                    upgrader.id()
+                                );
+
+                                return Ok(true);
+                            } else {
+                                warn!("upgrader has not terminated normally");
+                                return Ok(false);
+                            }
+                        }
+                        Ok(None) => if let Ok(elapsed) = upgrade_timeout.elapsed() {
+                            if elapsed.as_secs() > worker.config.upgrader_timeout {
+                                // timeout upgrade
+                                if let Err(e) = upgrader.kill() {
+                                    warn!(
+                                        "fail kill upgrader process pid [{}]. caused by: {}",
+                                        upgrader.id(),
+                                        e
+                                    );
+                                }
+                                warn!(
+                                    "upgrader process timeout. kill upgrader process pid [{}]",
+                                    upgrader.id()
+                                );
+                                return Ok(false);
+                            }
+                        },
+                        Err(e) => {
+                            warn!("upgrade process terminated abnormally. caused by: {}", e);
+                            return Ok(false);
+                        }
+                    }
+                    now = time::SystemTime::now();
+                }
+            }
+        }
     }
 }
