@@ -1,11 +1,12 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{copy, Read, Write};
 use std::os::unix::process::CommandExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::{fs, io};
+use std::{fs, io, thread, time};
 
+use libc;
 use nix::unistd::getpid;
 
 use app::APP_NAME_UPPER;
@@ -230,8 +231,8 @@ impl Process {
         Ok(0)
     }
 
-    pub fn child(&mut self) -> Option<&Child> {
-        self.child.as_ref()
+    pub fn child(&mut self) -> Option<&mut Child> {
+        self.child.as_mut()
     }
 }
 
@@ -285,6 +286,7 @@ pub fn process_normally_exited(p: &mut Child) -> io::Result<bool> {
 
 pub fn process_output(p: &mut Child) {
     let pid = p.id();
+
     if let Some(ref mut stdout) = p.stdout {
         let mut buf = String::new();
         if let Ok(size) = stdout.read_to_string(&mut buf) {
@@ -301,4 +303,60 @@ pub fn process_output(p: &mut Child) {
             }
         }
     }
+}
+
+pub fn output_stdout_log(p: &mut Child, writer: &mut Box<io::Write>) -> io::Result<()> {
+    let retry = if let Some(ref mut reader) = p.stdout {
+        match copy(reader, writer) {
+            Ok(_size) => {
+                writer.flush()?;
+                false
+            }
+            Err(e) => {
+                if e.raw_os_error() == Some(libc::EWOULDBLOCK)
+                    || e.raw_os_error() == Some(libc::EAGAIN)
+                {
+                    writer.flush()?;
+                    true
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    } else {
+        false
+    };
+    if retry {
+        thread::sleep(time::Duration::from_millis(100));
+        output_stdout_log(p, writer)?;
+    }
+    Ok(())
+}
+
+pub fn output_stderr_log(p: &mut Child, writer: &mut Box<io::Write>) -> io::Result<()> {
+    let retry = if let Some(ref mut reader) = p.stderr {
+        match copy(reader, writer) {
+            Ok(_size) => {
+                writer.flush()?;
+                false
+            }
+            Err(e) => {
+                if e.raw_os_error() == Some(libc::EWOULDBLOCK)
+                    || e.raw_os_error() == Some(libc::EAGAIN)
+                {
+                    writer.flush()?;
+                    true
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    } else {
+        false
+    };
+    if retry {
+        thread::sleep(time::Duration::from_millis(100));
+        output_stderr_log(p, writer)?;
+    }
+    Ok(())
 }

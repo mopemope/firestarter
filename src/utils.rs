@@ -38,10 +38,6 @@ pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
     }
 }
 
-pub fn set_block(fd: libc::c_int) -> io::Result<()> {
-    unsafe { cvt(libc::fcntl(fd, libc::F_SETFL, 0)).map(|_| ()) }
-}
-
 pub fn format_duration(d: Duration) -> String {
     let h = d.num_hours();
     let m = d.num_minutes() % 60;

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{copy, Write};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::net::UnixListener;
 use std::process::{exit, Child};
@@ -22,7 +22,7 @@ use process::{process_exited, process_output};
 use reloader;
 use signal::{Signal, SignalSend};
 use sock::ListenFd;
-use utils::format_duration;
+use utils::{format_duration, set_nonblock};
 use worker::Worker;
 
 extern "C" fn handle_signal(signum: i32) {
@@ -331,6 +331,9 @@ impl MonitorProcess {
             if let Err(e) = worker.signal_all(Signal::SIGTERM) {
                 warn!("fail send signal SIGTERM. caused by: {}", e);
             }
+            if let Err(e) = monitor.wait_process_io(worker, 1) {
+                warn!("fail worker cleanup. caused by: {}", e);
+            }
             if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
                 exit(-1);
             }
@@ -428,8 +431,9 @@ impl Monitor {
 
     pub fn watch_io(&mut self, fd: RawFd, kind: OutputKind) -> io::Result<()> {
         let token = self.next_token();
+        set_nonblock(fd)?;
         self.poll
-            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::level())?;
+            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::edge())?;
         self.io_events.insert(token, IOEvent::new(token, fd, kind));
         Ok(())
     }
@@ -606,25 +610,55 @@ impl Monitor {
     fn process_log_event(&mut self, worker: &mut Worker, token: Token) -> io::Result<bool> {
         let remove = if let Some(ref mut event) = self.io_events.get_mut(&token) {
             let mut remove = false;
-            let mut buf = vec![0; 4096];
-            let size = event.reader.read(&mut buf[..])?;
+            let size = match event.kind {
+                OutputKind::StdOut => {
+                    if let Some(ref mut writer) = worker.stdout_log {
+                        match copy(&mut event.reader, writer) {
+                            Ok(size) => {
+                                writer.flush()?;
+                                size
+                            }
+                            Err(e) => {
+                                if e.raw_os_error() == Some(libc::EWOULDBLOCK)
+                                    || e.raw_os_error() == Some(libc::EAGAIN)
+                                {
+                                    writer.flush()?;
+                                    return Ok(false);
+                                } else {
+                                    return Err(e);
+                                }
+                            }
+                        }
+                    } else {
+                        return Ok(false);
+                    }
+                }
+                OutputKind::StdErr => {
+                    if let Some(ref mut writer) = worker.stderr_log {
+                        match copy(&mut event.reader, writer) {
+                            Ok(size) => {
+                                writer.flush()?;
+                                size
+                            }
+                            Err(e) => {
+                                if e.raw_os_error() == Some(libc::EWOULDBLOCK)
+                                    || e.raw_os_error() == Some(libc::EAGAIN)
+                                {
+                                    writer.flush()?;
+                                    return Ok(false);
+                                } else {
+                                    return Err(e);
+                                }
+                            }
+                        }
+                    } else {
+                        return Ok(false);
+                    }
+                }
+            };
             if size == 0 {
                 self.poll.deregister(&EventedFd(&event.fd))?;
                 remove = true;
-            }
-            match event.kind {
-                OutputKind::StdOut => {
-                    if let Some(ref mut log) = worker.stdout_log {
-                        log.write_all(&buf[..size])?;
-                        log.flush()?;
-                    };
-                }
-                OutputKind::StdErr => {
-                    if let Some(ref mut log) = worker.stderr_log {
-                        log.write_all(&buf[..size])?;
-                        log.flush()?;
-                    };
-                }
             }
             remove
         } else {
@@ -783,6 +817,9 @@ impl Monitor {
             while i != worker.processes.len() {
                 if process_exited(&mut worker.processes[i]) {
                     let mut p = worker.processes.remove(i);
+                    if let Err(_e) = worker.cleanup_process(&mut p) {
+                        //
+                    }
                     info!("exited process {}", p.process_name(),);
                 } else {
                     i += 1;
@@ -861,6 +898,40 @@ impl Monitor {
                         }
                     }
                     now = time::SystemTime::now();
+                }
+            }
+        }
+    }
+
+    pub fn wait_process_io(&mut self, worker: &mut Worker, secs: u64) -> io::Result<()> {
+        let mut events = Events::with_capacity(1024);
+        let now = time::SystemTime::now();
+        let timeout = Some(time::Duration::from_secs(secs));
+        loop {
+            match self.poll.poll_interruptible(&mut events, timeout) {
+                Ok(size) => {
+                    if size == 0 {
+                        return Ok(());
+                    }
+                    for event in &events {
+                        let token = event.token();
+                        if self.process_log_event(worker, token)? {
+                            self.io_events.remove(&token);
+                        }
+                    }
+                    if let Ok(elapsed) = now.elapsed() {
+                        if elapsed.as_secs() >= secs {
+                            return Ok(());
+                        }
+                    } else {
+                        return Ok(());
+                    }
+                }
+                Err(e) => {
+                    if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
+                        exit(-1);
+                    }
+                    return Err(e);
                 }
             }
         }

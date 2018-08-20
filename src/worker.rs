@@ -9,7 +9,7 @@ use nix::unistd::getpid;
 use config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
 use logs::RollingLogFile;
 use monitor::{Monitor, OutputKind};
-use process::{process_exited, run_upgrader, Process};
+use process::{output_stderr_log, output_stdout_log, process_exited, run_upgrader, Process};
 use signal::{Signal, SignalSend};
 
 // #[derive(Debug)]
@@ -61,6 +61,10 @@ impl<'a> Worker<'a> {
 
     pub fn run(&mut self, monitor: &mut Monitor) -> io::Result<Vec<u32>> {
         let pid = getpid();
+        debug!(
+            "prepare [{}] worker. created [{}] pid [{}]",
+            self.name, self.created_at, pid
+        );
         let mut res = Vec::new();
         if self.stdout_log.is_none() {
             if let Some(ref s) = self.config.stdout_log {
@@ -290,14 +294,23 @@ impl<'a> Worker<'a> {
                 );
             } else {
                 info!("send signal {:?} to pid [{}]", sig, pid);
-                if sig == Signal::SIGTERM || sig == Signal::SIGKILL {
-                    p.cleanup();
-                }
                 pids.push(pid);
             };
         }
         debug!("sended signal pid {:?}", pids);
         Ok(pids)
+    }
+
+    pub fn cleanup_process(&mut self, p: &mut Process) -> io::Result<()> {
+        if let Some(ref mut p) = p.child() {
+            if let Some(ref mut writer) = self.stdout_log {
+                output_stdout_log(p, writer)?;
+            }
+            if let Some(ref mut writer) = self.stderr_log {
+                output_stderr_log(p, writer)?;
+            }
+        }
+        Ok(())
     }
 
     fn move_old_process(&mut self) -> Vec<Process> {
@@ -349,6 +362,9 @@ impl<'a> Worker<'a> {
         while i != self.processes.len() {
             if process_exited(&mut self.processes[i]) {
                 let mut p = self.processes.remove(i);
+                if let Err(e) = self.cleanup_process(&mut p) {
+                    warn!("fail cleanup process {}. caused by {}", p.process_name(), e);
+                }
                 info!("exited process {}", p.process_name(),);
                 failed += 1;
             } else {
@@ -371,7 +387,7 @@ impl<'a> Worker<'a> {
                 old.push(pid);
             }
         }
-        thread::sleep(time::Duration::from_secs(1));
+        monitor.wait_process_io(self, 1)?;
         while let Some(ref mut p) = old_processes.pop() {
             if p.try_wait().is_none() {
                 if let Err(e) = p.kill() {
@@ -419,7 +435,7 @@ impl<'a> Worker<'a> {
                 }
             }
         }
-        thread::sleep(time::Duration::from_secs(1));
+        monitor.wait_process_io(self, 1)?;
         while let Some(ref mut p) = tmp.pop() {
             if p.try_wait().is_none() {
                 if let Err(e) = p.kill() {
@@ -452,7 +468,7 @@ impl<'a> Worker<'a> {
                 old.push(pid);
             }
         }
-        thread::sleep(time::Duration::from_secs(1));
+        monitor.wait_process_io(self, 1)?;
         while let Some(ref mut p) = self.processes.pop() {
             if p.try_wait().is_none() {
                 if let Err(e) = p.kill() {
