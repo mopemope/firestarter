@@ -918,6 +918,9 @@ impl Monitor {
                         if self.process_log_event(worker, token)? {
                             self.io_events.remove(&token);
                         }
+                        if self.io_events.is_empty() {
+                            return Ok(());
+                        }
                     }
                     if let Ok(elapsed) = now.elapsed() {
                         if elapsed.as_secs() >= secs {

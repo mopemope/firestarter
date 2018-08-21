@@ -318,11 +318,11 @@ impl Daemon {
     }
 
     fn check_monitor_processes(&mut self) -> Result<(), Error> {
+        let timeout = time::Duration::from_millis(500);
         let restarts = self.check_monitors();
         for name in &restarts {
             if let Some(config) = self.config.workers.get(name) {
                 info!("wait respawn monitor process [{}]", name);
-                let timeout = time::Duration::from_secs(1);
                 thread::sleep(timeout);
                 let mut monitor = MonitorProcess::new(name.to_owned(), config);
                 if monitor.spawn(name, config)? {
@@ -340,11 +340,11 @@ impl Daemon {
         if let Err(e) = self.check_monitor_processes() {
             error!("fail spwan monitor process. caused by: {}", e);
         }
+        let delay = time::Duration::from_millis(500);
         while !self.monitors.is_empty() {
             if let Err(e) = self.check_monitor_processes() {
                 error!("fail spwan monitor process. caused by: {}", e);
             }
-            let delay = time::Duration::from_secs(1);
             thread::sleep(delay);
         }
     }
