@@ -115,10 +115,14 @@ impl MonitorProcess {
     pub fn remove_ctrl_sock(&self) {
         let sock_path = &self.sock_path;
         if path::Path::new(sock_path).exists() {
+            let pid = self.pid.unwrap();
             if let Err(e) = fs::remove_file(&sock_path) {
-                warn!("fail remove control socket {}. caused by: {}", sock_path, e);
+                warn!(
+                    "fail remove control socket {}. caused by: {} pid [{}]",
+                    sock_path, e, pid
+                );
             } else {
-                info!("remove control socket. {:?}", &sock_path);
+                info!("remove control socket. {} pid [{}]", &sock_path, pid);
             }
         }
         self.remove_process_watch_files();
@@ -191,9 +195,9 @@ impl MonitorProcess {
             Ok(WaitStatus::StillAlive) => Ok(ExitStatus::StillAlive),
             Ok(WaitStatus::Exited(pid, status)) => {
                 debug!(
-                    "exited monitor pid [{:?}] exit_code [{:?}]",
+                    "exited monitor exit_code [{:?}] pid [{}]",
+                    status,
                     libc::pid_t::from(pid),
-                    status
                 );
                 if status == 255 {
                     Ok(ExitStatus::Restart)
@@ -204,7 +208,7 @@ impl MonitorProcess {
             Ok(WaitStatus::Continued(_pid)) => Ok(ExitStatus::StillAlive),
             Ok(WaitStatus::Stopped(pid, signal)) => {
                 debug!(
-                    "catch signal {:?}. name [{}] pid [{:}]",
+                    "catch signal {:?}. name [{}] pid [{}]",
                     signal, self.name, pid
                 );
                 match signal {
@@ -217,7 +221,7 @@ impl MonitorProcess {
             }
             Ok(WaitStatus::Signaled(pid, signal, _)) => {
                 debug!(
-                    "catch signal {:?}. name [{}] pid [{:?}]",
+                    "catch signal {:?}. name [{}] pid [{}]",
                     signal, self.name, pid
                 );
                 match signal {
@@ -230,7 +234,7 @@ impl MonitorProcess {
             }
             Ok(_) => Ok(ExitStatus::ForceExit),
             Err(e) => Err(err_msg(format!(
-                "fail monitor process wait. caused by: {}. pid [{:?}]",
+                "fail monitor process wait. caused by: {}. pid [{}]",
                 e, self_pid
             ))),
         }
@@ -245,12 +249,11 @@ impl MonitorProcess {
                 Ok(true)
             }
             ForkResult::Child => {
-                self.pid = Some(getpid());
+                let pid = getpid();
+                self.pid = Some(pid);
                 let mut worker = Worker::new(name, config);
-
                 if let Err(e) = self.start_monitoring(&key, &mut worker, config) {
-                    // do cleanup
-                    warn!("fail monitor start. caused by: {}", e);
+                    warn!("exited monitor. caused by: {} pid: [{}]", e, pid);
                     return Err(e);
                 }
                 Ok(false)

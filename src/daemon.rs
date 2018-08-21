@@ -389,22 +389,23 @@ impl Daemon {
 
 impl Drop for Daemon {
     fn drop(&mut self) {
+        let pid = getpid();
         for (name, config) in &self.config.workers {
             let sock_path = config.control_sock(name);
             if path::Path::new(&sock_path).exists() {
                 if let Err(e) = fs::remove_file(&sock_path) {
-                    warn!("fail remove control socket. caused by: {}", e);
+                    warn!("fail remove control socket. caused by: {} pid [{}]", e, pid);
                 } else {
-                    info!("remove control socket. {:?}", &sock_path);
+                    info!("remove control socke {} pid [{}]", &sock_path, pid);
                 }
             }
         }
         let path = &self.config.control_sock;
         if path::Path::new(path).exists() {
             if let Err(e) = fs::remove_file(path) {
-                warn!("fail remove control socket. caused by: {:?}", e);
+                warn!("fail remove control socket. caused by: {} pid [{}]", e, pid);
             } else {
-                info!("remove control socket. {:?}", path);
+                info!("remove control socket {} pid [{}]", path, pid);
             }
         }
     }
