@@ -14,12 +14,12 @@ use config::WorkerConfig;
 use utils::{get_process_watch_file, timeout_process};
 
 #[derive(Debug)]
-pub struct Process {
+pub struct Process<'a> {
     pub id: u64,
-    pub name: String,
+    pub name: &'a str,
     pub cmdline: Vec<String>,
     environment: HashMap<String, String>,
-    working_directory: String,
+    working_directory: &'a str,
     child: Option<Child>,
     stdout_pipe: bool,
     stderr_pipe: bool,
@@ -28,17 +28,17 @@ pub struct Process {
     watch_file: Option<PathBuf>,
 }
 
-impl PartialEq for Process {
+impl<'a> PartialEq for Process<'a> {
     fn eq(&self, other: &Process) -> bool {
         self.cmdline == other.cmdline
     }
 }
 
-impl Process {
+impl<'a> Process<'a> {
     pub fn new(
         id: u64,
-        name: String,
-        working_directory: String,
+        name: &'a str,
+        working_directory: &'a str,
         environment: HashMap<String, String>,
         config: &WorkerConfig,
     ) -> Self {
@@ -48,6 +48,7 @@ impl Process {
         } else {
             None
         };
+
         Process {
             id,
             name,

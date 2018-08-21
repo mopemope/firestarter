@@ -26,7 +26,8 @@ pub struct WorkerConfig {
     pub socket_address: Vec<String>,
     #[serde(default = "default_vec_str")]
     pub environments: Vec<String>,
-    pub working_directory: Option<String>,
+    #[serde(default = "default_directory")]
+    pub working_directory: String,
     #[serde(default = "default_restart")]
     pub restart: RestartStrategy,
     #[serde(default = "default_ack")]
@@ -68,6 +69,9 @@ fn default_zero() -> u64 {
 }
 fn default_vec_str() -> Vec<String> {
     Vec::new()
+}
+fn default_directory() -> String {
+    "./".to_owned()
 }
 fn default_base_name() -> String {
     APP_NAME_UPPER.to_owned()
@@ -143,7 +147,7 @@ impl WorkerConfig {
     }
 }
 
-pub fn parse_config(path: String) -> io::Result<Config> {
+pub fn parse_config(path: &str) -> io::Result<Config> {
     let mut config_toml = String::new();
     let mut file = File::open(path)?;
     file.read_to_string(&mut config_toml)?;

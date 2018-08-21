@@ -38,7 +38,7 @@ pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
     }
 }
 
-pub fn format_duration(d: Duration) -> String {
+pub fn format_duration(d: &Duration) -> String {
     let h = d.num_hours();
     let m = d.num_minutes() % 60;
     let s = d.num_seconds() % 60;

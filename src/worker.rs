@@ -17,7 +17,7 @@ pub struct Worker<'a> {
     pub id: u64,
     pub name: &'a str,
     pub config: &'a WorkerConfig,
-    pub processes: Vec<Process>,
+    pub processes: Vec<Process<'a>>,
     pub stdout_log: Option<Box<io::Write>>,
     pub stderr_log: Option<Box<io::Write>>,
     pub active: bool,
@@ -200,12 +200,9 @@ impl<'a> Worker<'a> {
         self.config.start_immediate
     }
 
-    fn spawn_process(&mut self) -> io::Result<Process> {
+    fn spawn_process(&mut self) -> io::Result<Process<'a>> {
         self.id += 1;
-        let default = "./".to_owned();
-        let wd = self.config.working_directory.as_ref().unwrap_or(&default);
         let mut penv: HashMap<String, String> = HashMap::new();
-
         for mut env in &self.config.environments {
             let v: Vec<&str> = env.splitn(2, '=').collect();
             if v.len() == 2 {
@@ -230,8 +227,8 @@ impl<'a> Worker<'a> {
         }
         let mut p = Process::new(
             self.id,
-            self.name.to_owned(),
-            wd.to_string(),
+            self.name,
+            &self.config.working_directory,
             penv,
             &self.config,
         );
@@ -313,7 +310,7 @@ impl<'a> Worker<'a> {
         Ok(())
     }
 
-    fn move_old_process(&mut self) -> Vec<Process> {
+    fn move_old_process(&mut self) -> Vec<Process<'a>> {
         let self_pid = getpid();
         let mut old_processes: Vec<Process> = Vec::with_capacity(self.processes.len());
         while let Some(p) = self.processes.pop() {

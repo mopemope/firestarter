@@ -17,11 +17,10 @@ pub fn cmd_path(config: &WorkerConfig) -> path::PathBuf {
     let cmd_path = path::Path::new(cmd);
     if cmd_path.is_absolute() {
         cmd_path.to_owned()
-    } else if let Some(ref base) = config.working_directory {
+    } else {
+        let base = &config.working_directory;
         let root = path::Path::new(base).canonicalize().unwrap();
         root.join(cmd_path).canonicalize().unwrap()
-    } else {
-        cmd_path.canonicalize().unwrap()
     }
 }
 

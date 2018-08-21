@@ -33,7 +33,8 @@ fn make_app() -> App<'static, 'static> {
                         .short("c")
                         .long("config")
                         .help("set config file."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("socket-path")
                         .multiple(false)
                         .value_name("PATH")
@@ -42,7 +43,8 @@ fn make_app() -> App<'static, 'static> {
                         .default_value(sock_path)
                         .help("set ctrl socket path."),
                 ),
-        ).subcommand(
+        )
+        .subcommand(
             SubCommand::with_name("list")
                 .about("Show worker names")
                 .arg(
@@ -54,7 +56,8 @@ fn make_app() -> App<'static, 'static> {
                         .default_value(sock_path)
                         .help("set ctrl socket path."),
                 ),
-        ).subcommand(
+        )
+        .subcommand(
             SubCommand::with_name("status")
                 .about("Show worker status")
                 .arg(
@@ -66,7 +69,8 @@ fn make_app() -> App<'static, 'static> {
                         .default_value(sock_path)
                         .help("set ctrl socket path."),
                 ),
-        ).subcommand(
+        )
+        .subcommand(
             SubCommand::with_name("ctrl")
                 .about("Run control client")
                 .arg(
@@ -76,26 +80,31 @@ fn make_app() -> App<'static, 'static> {
                         .long("socket-path")
                         .default_value(sock_path)
                         .help("set ctrl socket path."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("signal")
                         .value_name("SIGNAL")
                         .possible_values(&[
                             "SIGKILL", "SIGINT", "SIGQUIT", "SIGTERM", "SIGHUP", "SIGUSR1",
                             "SIGUSR2",
-                        ]).short("s")
+                        ])
+                        .short("s")
                         .long("signal")
                         .help("set signal"),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("name")
                         .required(true)
                         .value_name("WORKER_CONFIG_NAME")
                         .help("set worker name."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("command")
                         .required(true)
                         .possible_values(&[
                             "start", "stop", "inc", "dec", "upgrade", "killall", "status",
-                        ]).value_name("COMMAND")
+                        ])
+                        .value_name("COMMAND")
                         .help("set send command."),
                 ),
         )
@@ -111,7 +120,7 @@ pub fn execute() -> Result<(), Error> {
                 .value_of("socket-path")
                 .expect("require control socket path");
             let path = m.value_of("config").expect("require config path");
-            let mut config = { parse_config(path.to_owned())? };
+            let mut config = { parse_config(path)? };
             config.control_sock = sock_path.to_owned();
             Daemon::new(config).run()
         }

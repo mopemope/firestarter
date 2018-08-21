@@ -73,14 +73,14 @@ impl Drop for MonitorProcess {
 }
 
 impl MonitorProcess {
-    pub fn new(name: String, config: &WorkerConfig) -> Self {
+    pub fn new(name: &str, config: &WorkerConfig) -> Self {
         let sock_path = config.control_sock(&name);
         let cmd_path = reloader::cmd_path(&config);
         let metadata = cmd_path.metadata().unwrap();
         let cmd_mtime = metadata.modified().unwrap();
 
         MonitorProcess {
-            name,
+            name: name.to_owned(),
             pid: None,
             sock_path,
             listen_fd: Vec::new(),
@@ -548,7 +548,7 @@ impl Monitor {
                         name,
                         active,
                         worker.process_pid(),
-                        format_duration(worker.uptime()),
+                        format_duration(&worker.uptime()),
                     ),
                 }
             }
@@ -602,7 +602,7 @@ impl Monitor {
                         worker.run(self)?;
                     }
                 }
-                if let Err(e) = self.process_ctrl_event(token, worker) {
+                if let Err(e) = self.process_ctrl_event(worker, token) {
                     warn!("fail process ctrl event. caused by: {}", e);
                 }
             }
@@ -709,7 +709,7 @@ impl Monitor {
         Ok(None)
     }
 
-    fn process_ctrl_event(&mut self, token: Token, worker: &mut Worker) -> io::Result<()> {
+    fn process_ctrl_event(&mut self, worker: &mut Worker, token: Token) -> io::Result<()> {
         if self.is_ctrl_event(token) {
             let (mut stream, _addr) = self.ctrl_sock.accept()?;
             let cmd = read_command(&stream)?;
@@ -750,7 +750,7 @@ impl Monitor {
                     alive = false;
                     self.io_events.remove(&token);
                 }
-                if let Err(e) = self.process_ctrl_event(token, worker) {
+                if let Err(e) = self.process_ctrl_event(worker, token) {
                     warn!(
                         "fail process ctrl event. caused by: {} pid [{}]",
                         e, self.pid

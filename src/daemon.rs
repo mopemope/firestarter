@@ -324,7 +324,7 @@ impl Daemon {
             if let Some(config) = self.config.workers.get(name) {
                 info!("wait respawn monitor process [{}]", name);
                 thread::sleep(timeout);
-                let mut monitor = MonitorProcess::new(name.to_owned(), config);
+                let mut monitor = MonitorProcess::new(name, config);
                 if monitor.spawn(name, config)? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
@@ -353,7 +353,7 @@ impl Daemon {
         info!("start daemon. pid [{}]", self.pid);
         for (name, config) in &mut self.config.workers {
             if !self.monitors.contains_key(name) {
-                let mut monitor = MonitorProcess::new(name.to_owned(), config);
+                let mut monitor = MonitorProcess::new(name, config);
                 if monitor.spawn(name, config)? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
