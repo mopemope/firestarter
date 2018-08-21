@@ -17,7 +17,7 @@ use utils::{get_process_watch_file, timeout_process};
 pub struct Process<'a> {
     pub id: u64,
     pub name: &'a str,
-    pub cmdline: Vec<String>,
+    pub cmdline: &'a [String],
     environment: HashMap<String, String>,
     working_directory: &'a str,
     child: Option<Child>,
@@ -40,9 +40,8 @@ impl<'a> Process<'a> {
         name: &'a str,
         working_directory: &'a str,
         environment: HashMap<String, String>,
-        config: &WorkerConfig,
+        config: &'a WorkerConfig,
     ) -> Self {
-        let cmdline = config.cmd.iter().map(|c| c.to_string()).collect();
         let watch_file = if config.live_check_timeout > 0 {
             Some(PathBuf::new())
         } else {
@@ -52,7 +51,7 @@ impl<'a> Process<'a> {
         Process {
             id,
             name,
-            cmdline,
+            cmdline: &config.cmd,
             environment,
             working_directory,
             child: None,
@@ -306,7 +305,7 @@ pub fn process_output(p: &mut Child) {
     }
 }
 
-pub fn output_stdout_log(p: &mut Child, writer: &mut Box<io::Write>) -> io::Result<()> {
+pub fn output_stdout_log(p: &mut Child, writer: &mut io::Write) -> io::Result<()> {
     let retry = if let Some(ref mut reader) = p.stdout {
         match copy(reader, writer) {
             Ok(_size) => {
@@ -334,7 +333,7 @@ pub fn output_stdout_log(p: &mut Child, writer: &mut Box<io::Write>) -> io::Resu
     Ok(())
 }
 
-pub fn output_stderr_log(p: &mut Child, writer: &mut Box<io::Write>) -> io::Result<()> {
+pub fn output_stderr_log(p: &mut Child, writer: &mut io::Write) -> io::Result<()> {
     let retry = if let Some(ref mut reader) = p.stderr {
         match copy(reader, writer) {
             Ok(_size) => {

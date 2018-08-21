@@ -91,7 +91,7 @@ impl MonitorProcess {
         }
     }
 
-    pub fn is_upgrade_active_time(&mut self, timeout: u64) -> bool {
+    pub fn is_upgrade_active_time(&self, timeout: u64) -> bool {
         match self.upgrade_active_time.elapsed() {
             Ok(elapsed) => {
                 let sec = elapsed.as_secs();
