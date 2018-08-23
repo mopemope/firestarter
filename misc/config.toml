@@ -38,7 +38,7 @@ ack = "manual"
 # ack_timeout = 1
 
 # set ack signal. default is SIGUSR2
-#ack_signal = "SIGUSR2"
+# ack_signal = "SIGUSR2"
 
 # set uid
 # uid = 1000
