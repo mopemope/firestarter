@@ -131,7 +131,7 @@ pub fn read_daemon_command(stream: &mut UnixStream) -> io::Result<DaemonCommand>
             Err(io::Error::new(io::ErrorKind::InvalidInput, e))
         }
         Ok(cmd) => {
-            info!("receive command. {:?}. pid [{}]", cmd, pid);
+            debug!("receive command. {:?}. pid [{}]", cmd, pid);
             Ok(cmd)
         }
     }
@@ -149,7 +149,7 @@ pub fn read_command(stream: &UnixStream) -> io::Result<CtrlCommand> {
             Err(io::Error::new(io::ErrorKind::InvalidInput, e))
         }
         Ok(cmd) => {
-            info!("receive command. {:?}. pid [{}]", cmd, pid);
+            debug!("receive command. {:?}. pid [{}]", cmd, pid);
             Ok(cmd)
         }
     }
