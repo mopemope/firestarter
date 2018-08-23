@@ -34,8 +34,11 @@ environments=["TEST_A=XXXX", "TEST_B=YYYY"]
 # none: no ack. simple stop and start
 ack = "manual"
 
-# set timer ack time in seconds
-# ack_timeout = 2
+# set timer ack time in seconds. default 1sec
+# ack_timeout = 1
+
+# set ack signal. default is SIGUSR2
+#ack_signal = "SIGUSR2"
 
 # set uid
 # uid = 1000

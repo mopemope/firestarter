@@ -466,6 +466,7 @@ impl Monitor {
         worker: &mut Worker,
     ) -> io::Result<CommandResponse> {
         let name = worker.name.to_owned();
+        let ack_signal = worker.config.ack_signal;
         let self_pid = libc::pid_t::from(self.pid) as u32;
         debug!("exec_command {:?} pid [{}]", command, self.pid);
         let res = match command {
@@ -517,7 +518,7 @@ impl Monitor {
                 }
             }
             Command::Upgrade => {
-                let signal = signal.unwrap_or(Signal::SIGUSR2);
+                let signal = signal.unwrap_or(ack_signal);
                 let (new, old) = worker.upgrade(self, signal)?;
                 CommandResponse {
                     status: Status::Ok,
@@ -788,11 +789,7 @@ impl Monitor {
         Ok(())
     }
 
-    pub fn wait_ack(
-        &mut self,
-        worker: &mut Worker,
-        default_signal: Signal,
-    ) -> io::Result<Vec<Signal>> {
+    pub fn wait_ack(&mut self, worker: &mut Worker, ack_signal: Signal) -> io::Result<Vec<Signal>> {
         let mut events = Events::with_capacity(1024);
         let mut ack = Vec::new();
         let timeout = Some(time::Duration::from_secs(1));
@@ -813,7 +810,7 @@ impl Monitor {
                     self.io_events.remove(&token);
                 }
                 let signal = self.get_ack_event(token)?;
-                ack.push(signal.unwrap_or(default_signal));
+                ack.push(signal.unwrap_or(ack_signal));
             }
 
             let mut i = 0;

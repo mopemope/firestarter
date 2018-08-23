@@ -341,7 +341,7 @@ impl<'a> Worker<'a> {
     fn run_timer_ack(
         &mut self,
         monitor: &mut Monitor,
-        default_signal: Signal,
+        signal: Signal,
     ) -> io::Result<(Vec<u32>, Vec<u32>)> {
         let mut old = Vec::new();
         let self_pid = getpid();
@@ -379,8 +379,8 @@ impl<'a> Worker<'a> {
 
         for p in &mut old_processes {
             if let Some(pid) = p.pid() {
-                debug!("send signal {:?} {}", default_signal, p.process_name(),);
-                pid.signal(default_signal)?;
+                info!("send ack signal {:?} {}", signal, p.process_name(),);
+                pid.signal(signal)?;
                 old.push(pid);
             }
         }
@@ -400,7 +400,7 @@ impl<'a> Worker<'a> {
     fn run_manual_ack(
         &mut self,
         monitor: &mut Monitor,
-        default_signal: Signal,
+        signal: Signal,
     ) -> io::Result<(Vec<u32>, Vec<u32>)> {
         let mut old = Vec::new();
         let self_pid = getpid();
@@ -412,15 +412,15 @@ impl<'a> Worker<'a> {
         );
         let mut tmp: Vec<Process> = Vec::with_capacity(old_processes.len());
         while !old_processes.is_empty() {
-            let signals = monitor.wait_ack(self, default_signal)?;
+            let signals = monitor.wait_ack(self, signal)?;
             debug!("receive ack. custom signals {:?}", signals);
             for ack_sig in signals {
                 if let Some(mut p) = old_processes.pop() {
                     if let Some(pid) = p.pid() {
+                        info!("send ack signal {:?} {}", signal, p.process_name());
                         pid.signal(ack_sig)?;
                         old.push(pid);
                         tmp.push(p);
-                        debug!("sended signal {:?} to pid [{}]", ack_sig, pid);
                     }
                 }
             }
@@ -460,7 +460,7 @@ impl<'a> Worker<'a> {
 
         for p in &mut self.processes {
             if let Some(pid) = p.pid() {
-                debug!("send signal {:?} to {}", signal, p.process_name());
+                info!("send ack signal {:?} {}", signal, p.process_name());
                 pid.signal(signal)?;
                 old.push(pid);
             }

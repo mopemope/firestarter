@@ -7,6 +7,7 @@ use toml::from_str;
 
 use app::{APP_NAME, APP_NAME_UPPER};
 use logs::RollingLogFile;
+use signal;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -34,6 +35,8 @@ pub struct WorkerConfig {
     pub ack: AckKind,
     #[serde(default = "default_num")]
     pub ack_timeout: u64,
+    #[serde(default = "default_ack_signal")]
+    pub ack_signal: signal::Signal,
     #[serde(default = "default_base_name")]
     pub environment_base_name: String,
     #[serde(default = "default_zero")]
@@ -78,6 +81,9 @@ fn default_base_name() -> String {
 }
 fn default_ack() -> AckKind {
     AckKind::Timer
+}
+fn default_ack_signal() -> signal::Signal {
+    signal::Signal::SIGUSR2
 }
 fn default_restart() -> RestartStrategy {
     RestartStrategy::None
