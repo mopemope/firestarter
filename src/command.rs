@@ -21,6 +21,8 @@ pub enum Command {
     Start,
     #[serde(rename = "worker:stop")]
     Stop,
+    #[serde(rename = "worker:restart")]
+    Restart,
     #[serde(rename = "worker:upgrade")]
     Upgrade, // upgrade swap process
     #[serde(rename = "worker:ack")]
@@ -46,6 +48,7 @@ impl FromStr for Command {
             "inc" => Ok(Command::Inc),
             "dec" => Ok(Command::Dec),
             "status" => Ok(Command::Status),
+            "restart" => Ok(Command::Restart),
             _ => Err(err_msg(format!("{} not support.", s))),
         }
     }

@@ -498,6 +498,16 @@ impl Monitor {
                     message: format!("send signal {:?} pid {:?}", signal, pids),
                 }
             }
+            Command::Restart => {
+                let signal = signal.unwrap_or(Signal::SIGTERM);
+                let (new, old) = worker.restart(self, signal)?;
+                CommandResponse {
+                    status: Status::Ok,
+                    command: command.clone(),
+                    pid: self_pid,
+                    message: format!("restart processes new {:?} old {:?}", new, old),
+                }
+            }
             Command::Inc => {
                 let pid = worker.inc(self)?;
                 CommandResponse {

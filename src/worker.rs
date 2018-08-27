@@ -332,7 +332,7 @@ impl<'a> Worker<'a> {
             new.push(pid);
         }
         info!(
-            "spawn upgraded processes {:?}. [{}] worker. pid [{}]",
+            "spawn new processes {:?}. [{}] worker. pid [{}]",
             new, self.name, self_pid
         );
         Ok(new)
@@ -485,6 +485,7 @@ impl<'a> Worker<'a> {
         signal: Signal,
     ) -> io::Result<(Vec<u32>, Vec<u32>)> {
         let self_pid = getpid();
+        info!("start upgrade [{}] worker. pid [{}]", self.name, self_pid);
         if !self.active {
             let new_pid = Vec::new();
             let old_pid = Vec::new();
@@ -495,7 +496,6 @@ impl<'a> Worker<'a> {
             return Ok((new_pid, old_pid));
         }
 
-        info!("start upgrade [{}] worker. pid [{}]", self.name, self_pid);
         if self.config.run_upgrader == RunUpgrader::OnUpgrade {
             if let Some(ref upgrader) = self.config.upgrader {
                 let mut proc = run_upgrader(upgrader)?;
@@ -544,5 +544,50 @@ impl<'a> Worker<'a> {
                 }
             }
         }
+    }
+
+    pub fn restart(
+        &mut self,
+        monitor: &mut Monitor,
+        signal: Signal,
+    ) -> io::Result<(Vec<u32>, Vec<u32>)> {
+        let self_pid = getpid();
+        info!("start restart [{}] worker. pid [{}]", self.name, self_pid);
+        if !self.active {
+            let new_pid = Vec::new();
+            let old_pid = Vec::new();
+            warn!(
+                "worker not active [{}] worker. pid [{}]",
+                self.name, self_pid
+            );
+            return Ok((new_pid, old_pid));
+        }
+        let mut old_pid = Vec::new();
+        let self_pid = getpid();
+        for p in &mut self.processes {
+            if let Some(pid) = p.pid() {
+                info!("send terminate signal {:?} {}", signal, p.process_name());
+                pid.signal(signal)?;
+                old_pid.push(pid);
+            }
+        }
+        monitor.wait_process_io(self, 1)?;
+        while let Some(ref mut p) = self.processes.pop() {
+            if p.try_wait().is_none() {
+                if let Err(e) = p.kill() {
+                    warn!("fail old kill process. caused by: {}", e);
+                }
+                warn!("no reaction. killed old process {}", p.process_name(),);
+            }
+            info!("exited old process {}", p.process_name());
+        }
+        self.spawn_upgrade_processes(monitor)?;
+        self.updated_at = Utc::now();
+        let new_pid = self.process_pid();
+        info!(
+            "success restart [{}] worker. new_pid {:?} old_pid {:?}. pid [{}]",
+            self.name, new_pid, old_pid, self_pid
+        );
+        Ok((new_pid, old_pid))
     }
 }
