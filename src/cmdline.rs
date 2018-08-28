@@ -90,7 +90,7 @@ fn make_app() -> App<'static, 'static> {
                         ])
                         .short("s")
                         .long("signal")
-                        .help("set signal"),
+                        .help("override send signal"),
                 )
                 .arg(
                     Arg::with_name("name")
@@ -102,7 +102,8 @@ fn make_app() -> App<'static, 'static> {
                     Arg::with_name("command")
                         .required(true)
                         .possible_values(&[
-                            "start", "stop", "inc", "dec", "upgrade", "killall", "status", "restart",
+                            "start", "stop", "inc", "dec", "upgrade", "killall", "status",
+                            "restart",
                         ])
                         .value_name("COMMAND")
                         .help("set send command."),
