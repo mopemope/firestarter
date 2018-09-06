@@ -7,7 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use nix::unistd::getpid;
 
 use config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
-use logs::RollingLogFile;
+use logs::LogFile;
 use monitor::{Monitor, OutputKind};
 use process::{output_stderr_log, output_stdout_log, process_exited, run_upgrader, Process};
 use signal::{Signal, SignalSend};
@@ -53,8 +53,7 @@ impl<'a> Worker<'a> {
     }
 
     fn get_log_writer(s: &str) -> io::Result<Box<io::Write>> {
-        // TODO support other
-        let mut log: RollingLogFile = s.parse().unwrap();
+        let mut log: LogFile = s.parse().unwrap();
         log.open()?;
         Ok(Box::new(log))
     }
