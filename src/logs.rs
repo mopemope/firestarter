@@ -6,9 +6,11 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::SystemTime;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, Timelike, Utc};
 use failure::{err_msg, Error};
 use glob::glob;
+
+const MIDNIGHT: i64 = 60 * 60 * 24;
 
 pub trait RotatePolicy {
     fn rotate(&mut self, buf: &[u8], p: &Path, file: &File) -> io::Result<bool>;
@@ -69,47 +71,72 @@ impl RotatePolicy for SizeRotatePolicy {
 }
 
 struct TimedRotatePolicy {
-    roll_over_at: DateTime<Utc>,
+    rollover_at: DateTime<Utc>,
     duration: Duration,
     format: String,
     max_backup: u32,
     check_time: SystemTime,
+    midnight: bool,
 }
 
 impl TimedRotatePolicy {
-    fn new(interval: u32, when: &str, max_backup: u32) -> Self {
-        let now = Utc::now();
-        let (interval_secs, fmt): (i64, &str) = match when {
-            "S" => (1, "%Y%m%d%H%M%S"),
-            "M" => (60, "%Y%m%d%H%M"),
-            "H" => (60 * 60, "%Y%m%d%H"),
-            "D" => (60 * 60 * 24, "%Y%m%d"),
+    fn new(interval: u32, when: &str, max_backup: u32, log_file: &str) -> Self {
+        let (interval_secs, fmt, midnight): (i64, &str, bool) = match when {
+            "S" => (1, "%Y%m%d%H%M%S", false),
+            "M" => (60, "%Y%m%d%H%M", false),
+            "H" => (60 * 60, "%Y%m%d%H", false),
+            "D" => (60 * 60 * 24, "%Y%m%d", false),
+            "MIDNIGHT" => (60 * 60 * 24, "%Y%m%d", true),
             _ => panic!("unknown type"),
         };
         let duration = Duration::seconds(interval_secs * i64::from(interval));
-        let roll_over_at = now + duration;
+
+        let f = Path::new(log_file);
+        let now = if f.exists() {
+            let mdata = f.metadata().unwrap();
+            let mtime = mdata.modified().unwrap();
+            DateTime::from(mtime)
+        } else {
+            Utc::now()
+        };
+        let rollover_at = TimedRotatePolicy::compute_rollover(now, midnight, duration);
         let check_time = SystemTime::now();
+
         TimedRotatePolicy {
-            roll_over_at,
+            rollover_at,
             duration,
             format: fmt.to_owned(),
             max_backup,
             check_time,
+            midnight,
+        }
+    }
+
+    fn compute_rollover(now: DateTime<Utc>, midnight: bool, duration: Duration) -> DateTime<Utc> {
+        if midnight {
+            let current_hour = now.hour();
+            let current_minute = now.minute();
+            let current_second = now.second();
+            let delta =
+                MIDNIGHT - i64::from((current_hour * 60 + current_minute) * 60 + current_second);
+            debug!("MIDNIGHT delta {} real duration {:?} ", delta, duration);
+            now + Duration::seconds(delta)
+        } else {
+            now + duration
         }
     }
 
     fn get_timed_filename(&mut self, p: &Path) -> PathBuf {
         let (parent, name, ext) = get_log_names(p);
-        let t = self.roll_over_at - self.duration;
+        let t = self.rollover_at - self.duration;
         let suffix = t.format(&self.format);
         let file_name = format!("{}.{}.{}", name, ext, suffix);
         Path::new(parent).join(file_name)
     }
 
-    fn timed_rotate(&mut self, p: &Path) -> io::Result<bool> {
+    fn timed_rotate(&mut self, now: DateTime<Utc>, p: &Path) -> io::Result<bool> {
         let max_backup = self.max_backup;
-        let now = Utc::now();
-        if self.roll_over_at > now {
+        if self.rollover_at > now {
             return Ok(false);
         }
         if !p.exists() {
@@ -122,7 +149,12 @@ impl TimedRotatePolicy {
         debug!("rename backup log file. {:?} -> {:?}", p, new_path);
         rename(p, &new_path)?;
         TimedRotatePolicy::remove_old_backup(p, max_backup as usize)?;
-        self.roll_over_at = now + self.duration;
+        let mut new_rollover_at =
+            TimedRotatePolicy::compute_rollover(now, self.midnight, self.duration);
+        while new_rollover_at <= now {
+            new_rollover_at = new_rollover_at + self.duration;
+        }
+        self.rollover_at = new_rollover_at;
         Ok(true)
     }
 
@@ -157,7 +189,8 @@ impl RotatePolicy for TimedRotatePolicy {
         if let Ok(elapsed) = self.check_time.elapsed() {
             if elapsed.as_secs() >= 1 {
                 self.check_time = SystemTime::now();
-                return self.timed_rotate(p);
+                let now = Utc::now();
+                return self.timed_rotate(now, p);
             }
         }
         Ok(false)
@@ -257,7 +290,8 @@ impl FromStr for LogFile {
                 let when = log_cfg[2];
                 let max_backup: u32 = log_cfg[3].parse().unwrap();
                 let path = log_cfg[4];
-                let policy = TimedRotatePolicy::new(roll_over, when, max_backup);
+                let when = when.to_uppercase();
+                let policy = TimedRotatePolicy::new(roll_over, &when, max_backup, path);
                 let log = LogFile::new(PathBuf::from(path), Box::new(policy));
                 Ok(log)
             }
