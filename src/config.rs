@@ -6,7 +6,7 @@ use std::{env, io};
 use toml::from_str;
 
 use app::{APP_NAME, APP_NAME_UPPER};
-use logs::RollingLogFile;
+use logs::LogFile;
 use signal;
 
 #[derive(Debug, Clone)]
@@ -174,10 +174,10 @@ pub fn parse_config(path: &str) -> io::Result<Config> {
     for wrk_config in &mut wrkrs.values_mut() {
         // validate config
         if let Some(ref stdout) = wrk_config.stdout_log {
-            let _stdout_log: RollingLogFile = stdout.parse().unwrap();
+            let _stdout_log: LogFile = stdout.parse().unwrap();
         }
         if let Some(ref stderr) = wrk_config.stderr_log {
-            let _stderr_log: RollingLogFile = stderr.parse().unwrap();
+            let _stderr_log: LogFile = stderr.parse().unwrap();
         }
 
         if let Some(ref _upgrader) = wrk_config.upgrader {

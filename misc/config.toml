@@ -1,31 +1,31 @@
-[web1] # set worker group name
+[web1] # set worker group name.
 
-# set startup process and args
+# set startup process and args.
 cmd = ["./demo/target/debug/demo"]
 
-# set the number of startup processes
+# set the number of startup processes.
 numprocesses = 2
 
-# set working directory
-# working_directory = "/tmp"
+# set working directory.
+# working_directory = "/tmp".
 
-# set restart policy. default is none
-# none: not restart process
-# on-failure: restart the process if it is not completed normally
-# always: restart the process whenever you exit
+# set restart policy. default is none.
+# none: not restart process.
+# on-failure: restart the process if it is not completed normally.
+# always: restart the process whenever you exit.
 restart = "on-failure"
 
-# set the seconds to delay the startup of the process
+# set the seconds to delay the startup of the process.
 # warmup_delay = 1
 
-# start the process immediately without starting the process when connecting the client socket
+# start the process immediately without starting the process when connecting the client socket.
 start_immediate = true
 
-# set shared socket addresses
+# set shared socket addresses.
 # it also support unix domain socket. (e.g.: /tmp/foo.sock)
 socket_address = ["127.0.0.1:4000", "127.0.0.1:4001"]
 
-# set processes environment
+# set processes environment.
 environments=["TEST_A=XXXX", "TEST_B=YYYY"]
 
 # set upgrade ack type. this is similar to einhorn 's ACKs. timer is default.
@@ -34,101 +34,63 @@ environments=["TEST_A=XXXX", "TEST_B=YYYY"]
 # none: no ack. simple stop and start
 ack = "manual"
 
-# set timer ack time in seconds. default 1sec
+# set timer ack time in seconds. default 1sec.
 # ack_timeout = 1
 
-# set ack signal. default is SIGUSR2
+# set ack signal. default is SIGUSR2.
 # ack_signal = "SIGUSR2"
 
-# set uid
+# set uid.
 # uid = 1000
 
-# set gid
+# set gid.
 # gid = 10
 
-# set stdout to file
-# only size rotation is supported
-# size:<file size>:<number of backup>:<output path>
+# set stdout to file.
+# size and timed rotate supported.
+# the format is below.
+# size:<max file size>:<number of backup>:<output path>
+# time:<rollover interval>:<type of interval>:<number of backup>:<output path>
+# the type of interval,the list of possible values is below.
+#‘S’Seconds
+#‘M’Minutes
+#‘H’Hours
+#‘D’Days
+#
+# exmple
 # stdout_log = "size:10240:5:/tmp/web1_out.log"
+# it rolls over in 3 days and keeps 5 backups.
+# stdout_log = "time:3:D:7:/tmp/web1_out.log"
 
-# set stderr to file
-# only size rotation is supported
-# size:<file size>:<number of backup>:<output path>
+# set stderr to file.
+# it is the same as stdout.
 # stderr_log = "size:10240:5:/tmp/web1_err.log"
 
-# set process live check configuration
+# set process live check configuration.
 # we will check the existence of the process (experimental).
 # the process needs to periodically update the mtime of the file passed in environment variable FIRESTARTER_WATCH_FILE.
 # the monitoring process kills the process when the mtime update interval exceeds the threshold. this is the same process as gunicorn's worker notify.
-# the unit is seconds, and the default value is 0 (disable live check)
+# the unit is seconds, and the default value is 0. (disable live check)
 # live_check_timeout = 60
 
-# set auto upgrade
+# set auto upgrade.
 # it will send upgrade command when their command file is modified.
 # it does the same processing as circus.plugins.CommandReloader.
 # auto_upgrade = false
 
-# set upgrader program
+# set upgrader program.
 # set the upgrader command.
 # run upgrade only when the upgrader command terminates normally.
 # upgrader = ["/a/b/upgrader"]
 
-# set upgrade timing
+# set upgrade timing.
 # execute the upgrader command for each specified seconds.
 # if not set, execute the upgrade command when executing the upgrade ctrl command.
 # upgrader_active_sec=10
 # upgrader_timeout=60
 
 ######################################################################
-# [web2] # set worker group name
+# [web2] # set other worker group name.
 
-# set startup process and args
+# set startup process and args.
 # cmd = ["./demo/target/debug/demo"]
-
-# set the number of startup processes
-# numprocesses = 1
-
-# set working directory
-# working_directory = "/tmp"
-
-# set restart policy. default is none
-# none: not restart process
-# on-failure: restart the process if it is not completed normally
-# always: restart the process whenever you exit
-# restart = "on-failure"
-
-# set the seconds to delay the startup of the process
-# warmup_delay = 2
-
-# start the process immediately without starting the process when connecting the client socket
-# start_immediate = true
-
-# set shared socket addresses
-# socket_address = ["127.0.0.1:5000"]
-
-# set processes environment
-# environments=["TEST_A=XXXX", "TEST_B=YYYY"]
-
-# set upgrade ack type. default is timer
-# timer: it will terminate the old process after a certain time
-# manual: send ack manually. For details, refer to einhorn's manual ack document
-# ack = "manual"
-
-# set timer ack time in seconds
-# ack_timeout = 2
-
-# set uid
-# uid = 1000
-
-# set gid
-# gid = 10
-
-# output stdout to file
-# only size rotation is supported
-# size:<file size>:<number of backup>:<output path>
-# stdout_log = "size:10240:5:/tmp/web1_out.log"
-
-# output stderr to file
-# only size rotation is supported
-# size:<file size>:<number of backup>:<output path>
-# stderr_log = "size:10240:5:/tmp/web1_err.log"
