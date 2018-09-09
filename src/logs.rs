@@ -82,16 +82,20 @@ struct TimedRotatePolicy {
 
 impl TimedRotatePolicy {
     fn new(interval: u32, when: &str, utc: &str, max_backup: u32, log_file: &str) -> Self {
-        let utc = utc == "U";
+        let utc = utc == "U" || utc == "UTC";
         let (interval_secs, fmt, midnight): (u64, &str, bool) = match when {
             "S" => (1, "%Y%m%d%H%M%S", false),
             "M" => (60, "%Y%m%d%H%M", false),
             "H" => (60 * 60, "%Y%m%d%H", false),
             "D" => (60 * 60 * 24, "%Y%m%d", false),
             "MIDNIGHT" => (60 * 60 * 24, "%Y%m%d", true),
-            _ => panic!("unknown type"),
+            _ => panic!("rotate unknown type"),
         };
-        let duration = Duration::from_secs(interval_secs * u64::from(interval));
+        let duration = if when == "MIDNIGHT" {
+            Duration::from_secs(interval_secs)
+        } else {
+            Duration::from_secs(interval_secs * u64::from(interval))
+        };
         let f = Path::new(log_file);
         let now = if f.exists() {
             let mdata = f.metadata().unwrap();
@@ -169,7 +173,7 @@ impl TimedRotatePolicy {
         let mut new_rollover_at =
             TimedRotatePolicy::compute_rollover(now, self.utc, self.midnight, self.duration);
         while new_rollover_at <= now {
-            new_rollover_at = new_rollover_at + self.duration;
+            new_rollover_at += self.duration;
         }
         self.rollover_at = new_rollover_at;
         Ok(true)

@@ -50,7 +50,10 @@ ack = "manual"
 # size and timed rotate supported.
 # the format is below.
 # size:<max file size>:<number of backup>:<output path>
-# time:<rollover interval>:<type of interval>:<number of backup>:<output path>
+# time:<rollover interval>:<type of interval>:<timzone for rotate>:<number of backup>:<output path>
+# the type of timezeone for rotate,the list of possible values is below.
+#‘U’UTC
+#‘L’Local
 # the type of interval,the list of possible values is below.
 #‘S’Seconds
 #‘M’Minutes
@@ -60,7 +63,7 @@ ack = "manual"
 # exmple
 # stdout_log = "size:10240:5:/tmp/web1_out.log"
 # it rolls over in 3 days and keeps 5 backups.
-# stdout_log = "time:3:D:7:/tmp/web1_out.log"
+# stdout_log = "time:3:D:U:7:/tmp/web1_out.log"
 
 # set stderr to file.
 # it is the same as stdout.
