@@ -20,8 +20,7 @@ pub struct Config {
 #[derive(Debug, Deserialize, Clone)]
 pub struct WorkerConfig {
     pub exec_start: String,
-    #[serde(default = "default_str")]
-    pub exec_stop: String,
+    pub exec_stop: Option<String>,
     #[serde(default = "default_num")]
     pub numprocesses: u64,
     #[serde(default = "default_bool")]
@@ -55,7 +54,6 @@ pub struct WorkerConfig {
     pub auto_upgrade: bool,
     #[serde(default = "default_zero")]
     pub live_check_timeout: u64,
-
     pub upgrader: Option<String>,
     #[serde(skip, default = "default_run_upgrader")]
     pub run_upgrader: RunUpgrader,
@@ -79,9 +77,6 @@ fn default_num() -> u64 {
 }
 fn default_zero() -> u64 {
     0
-}
-fn default_str() -> String {
-    "".to_owned()
 }
 fn default_vec_str() -> Vec<String> {
     Vec::new()
@@ -186,10 +181,14 @@ pub fn parse_config(path: &str) -> io::Result<Config> {
 
     for wrk_config in &mut wrkrs.values_mut() {
         // validate config
+
         let cmd = parse_cmd(&wrk_config.exec_start).expect("fail parse exec_start");
         wrk_config.exec_start_cmd = cmd;
-        let cmd = parse_cmd(&wrk_config.exec_stop).expect("fail parse exec_stop");
-        wrk_config.exec_stop_cmd = cmd;
+
+        if let Some(ref cmd) = wrk_config.exec_stop {
+            let cmd = parse_cmd(cmd).expect("fail parse exec_stop");
+            wrk_config.exec_stop_cmd = cmd;
+        }
 
         if let Some(ref stdout) = wrk_config.stdout_log {
             let _stdout_log: LogFile = stdout.parse().unwrap();
@@ -284,8 +283,8 @@ named!(command< CompleteStr, Vec<Token> >,
 fn parse_cmd(cmd: &str) -> Result<Vec<String>, env::VarError> {
     let tokens = match command(CompleteStr(cmd)) {
         Ok((_, result)) => result,
-        Err(Err::Error(e)) | Err(Err::Failure(e)) => panic!("Error {:?}", e),
-        Err(Err::Incomplete(needed)) => panic!("Needed {:?}", needed),
+        Err(Err::Error(e)) | Err(Err::Failure(e)) => panic!("Error {:?}. cmd {}", e, cmd),
+        Err(Err::Incomplete(needed)) => panic!("Needed {:?}. cmd {}", needed, cmd),
     };
     tokens
         .into_iter()
