@@ -20,7 +20,7 @@ use command::*;
 use config::WorkerConfig;
 use process::{process_exited, process_output};
 use reloader;
-use signal::{Signal, SignalSend};
+use signal::Signal;
 use sock::ListenFd;
 use utils::{format_duration, set_nonblock};
 use worker::Worker;
@@ -352,22 +352,6 @@ impl MonitorProcess {
             pid: 0,
             signal: Some(Signal::SIGKILL),
         })
-    }
-
-    pub fn signal(&mut self, signal: Signal) {
-        if let Some(pid) = self.pid {
-            let pid = libc::pid_t::from(pid) as u32;
-            debug!(
-                "signal [{:?}] monitor [{}]. pid [{}]",
-                signal, self.name, pid
-            );
-            if let Err(e) = pid.signal(signal) {
-                warn!(
-                    "fail signal [{:?}] monitor [{}]. caused by: {}. pid [{}]",
-                    signal, self.name, e, pid
-                );
-            }
-        }
     }
 }
 
