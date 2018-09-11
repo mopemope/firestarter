@@ -7,7 +7,7 @@ use nom::types::CompleteStr;
 use nom::Err;
 use toml::from_str;
 
-use app::{APP_NAME, APP_NAME_UPPER};
+use app::{get_app_name, APP_NAME_UPPER};
 use logs::LogFile;
 use signal;
 
@@ -154,7 +154,7 @@ impl WorkerConfig {
             self.control_socket.clone().unwrap()
         } else {
             let mut dir = env::temp_dir();
-            dir.push(format!("{}-{}.socket", APP_NAME, name));
+            dir.push(format!("{}-{}.socket", get_app_name(), name));
             let path = dir.to_str().unwrap();
             String::from(path)
         }
@@ -167,7 +167,7 @@ pub fn parse_config(path: &str) -> io::Result<Config> {
     file.read_to_string(&mut config_toml)?;
 
     let mut dir = env::temp_dir();
-    dir.push(format!("{}-control.socket", APP_NAME));
+    dir.push(format!("{}-control.socket", get_app_name()));
     let path = dir.to_str().unwrap();
     let sock = String::from(path);
 

@@ -3,7 +3,7 @@ use std::{env, path};
 use clap::{App, AppSettings, Arg, SubCommand};
 use failure::Error;
 
-use app::APP_NAME;
+use app::{get_app_name, APP_NAME};
 use client::Client;
 use config::parse_config;
 use daemon::Daemon;
@@ -11,7 +11,7 @@ use daemon::Daemon;
 lazy_static! {
     pub static ref SOCK_PATH: path::PathBuf = {
         let mut dir = env::temp_dir();
-        dir.push(format!("{}-control.socket", APP_NAME));
+        dir.push(format!("{}-control.socket", get_app_name() ));
         dir
     };
 }

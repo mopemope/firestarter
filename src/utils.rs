@@ -4,7 +4,7 @@ use std::{env, io, time};
 use chrono::Duration;
 use libc;
 
-use app::APP_NAME;
+use app::{get_app_name};
 
 pub trait IsMinusOne {
     fn is_minus_one(&self) -> bool;
@@ -47,7 +47,7 @@ pub fn format_duration(d: &Duration) -> String {
 
 pub fn get_process_watch_file(name: &str, id: u64) -> PathBuf {
     let mut dir = env::temp_dir();
-    dir.push(format!("{}-process-{}-{}.id", APP_NAME, name, id));
+    dir.push(format!("{}-process-{}-{}.id", get_app_name(), name, id));
     dir
 }
 

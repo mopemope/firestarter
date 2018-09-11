@@ -15,7 +15,7 @@ use nix::sys::signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, fork, getpid, ForkResult, Pid};
 
-use app::{APP_NAME, APP_NAME_UPPER};
+use app::{get_app_name, APP_NAME_UPPER};
 use command::*;
 use config::WorkerConfig;
 use process::{process_exited, process_output};
@@ -130,7 +130,7 @@ impl MonitorProcess {
 
     pub fn remove_process_watch_files(&self) {
         if let Some(root) = env::temp_dir().to_str() {
-            if let Ok(paths) = glob(&format!("{}/{}-process-{}-*", root, APP_NAME, self.name)) {
+            if let Ok(paths) = glob(&format!("{}/{}-process-{}-*", root, get_app_name() , self.name)) {
                 for entry in paths {
                     match entry {
                         Ok(ref path) => {
