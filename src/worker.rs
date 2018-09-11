@@ -9,7 +9,9 @@ use nix::unistd::getpid;
 use config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
 use logs::LogFile;
 use monitor::{Monitor, OutputKind};
-use process::{output_stderr_log, output_stdout_log, process_exited, run_upgrader, Process};
+use process::{
+    output_stderr_log, output_stdout_log, process_exited, run_exec_stop, run_upgrader, Process,
+};
 use signal::{Signal, SignalSend};
 
 // #[derive(Debug)]
@@ -431,6 +433,7 @@ impl<'a> Worker<'a> {
                 }
             }
         }
+
         monitor.wait_process_io(self, 1)?;
         while let Some(ref mut p) = tmp.pop() {
             if p.try_wait().is_none() {
@@ -450,21 +453,13 @@ impl<'a> Worker<'a> {
         monitor: &mut Monitor,
         signal: Signal,
     ) -> io::Result<(Vec<u32>, Vec<u32>)> {
-        let mut old = Vec::new();
         let self_pid = getpid();
         info!(
             "upgrading. wait ack [{:?}] [{}] worker. pid [{}]",
             self.config.ack, self.name, self_pid
         );
 
-        for p in &mut self.processes {
-            if let Some(pid) = p.pid() {
-                info!("send ack signal {:?} {}", signal, p.process_name());
-                pid.signal(signal)?;
-                old.push(pid);
-            }
-        }
-        monitor.wait_process_io(self, 1)?;
+        let old_pid = self.stop_processes(monitor, signal)?;
         while let Some(ref mut p) = self.processes.pop() {
             if p.try_wait().is_none() {
                 if let Err(e) = p.kill() {
@@ -475,7 +470,7 @@ impl<'a> Worker<'a> {
             info!("exited old process {}", p.process_name());
         }
         self.spawn_upgrade_processes(monitor)?;
-        Ok((self.process_pid(), old))
+        Ok((self.process_pid(), old_pid))
     }
 
     pub fn upgrade(
@@ -545,6 +540,45 @@ impl<'a> Worker<'a> {
         }
     }
 
+    fn stop_processes(&mut self, monitor: &mut Monitor, signal: Signal) -> io::Result<Vec<u32>> {
+        let mut old_pid = Vec::new();
+
+        if self.config.exec_stop_cmd.is_empty() {
+            for p in &mut self.processes {
+                if let Some(pid) = p.pid() {
+                    info!("send terminate signal {:?} {}", signal, p.process_name());
+                    pid.signal(signal)?;
+                    old_pid.push(pid);
+                }
+            }
+
+            monitor.wait_process_io(self, 1)?;
+        } else {
+            for p in &mut self.processes {
+                if let Some(pid) = p.pid() {
+                    old_pid.push(pid);
+                }
+            }
+
+            let stopper = run_exec_stop(&self.config.exec_stop_cmd)?;
+            monitor.wait_process_io(self, 1)?;
+            let pid = stopper.id();
+
+            let output = stopper.wait_with_output()?;
+            let buf = String::from_utf8(output.stdout).unwrap();
+            if !buf.is_empty() {
+                info!("process stdout. pid [{}]\n{}", pid, buf);
+            }
+
+            let buf = String::from_utf8(output.stderr).unwrap();
+            if !buf.is_empty() {
+                info!("process stderr. pid [{}]\n{}", pid, buf);
+            }
+        }
+
+        Ok(old_pid)
+    }
+
     pub fn restart(
         &mut self,
         monitor: &mut Monitor,
@@ -561,16 +595,8 @@ impl<'a> Worker<'a> {
             );
             return Ok((new_pid, old_pid));
         }
-        let mut old_pid = Vec::new();
-        let self_pid = getpid();
-        for p in &mut self.processes {
-            if let Some(pid) = p.pid() {
-                info!("send terminate signal {:?} {}", signal, p.process_name());
-                pid.signal(signal)?;
-                old_pid.push(pid);
-            }
-        }
-        monitor.wait_process_io(self, 1)?;
+
+        let old_pid = self.stop_processes(monitor, signal)?;
         while let Some(ref mut p) = self.processes.pop() {
             if p.try_wait().is_none() {
                 if let Err(e) = p.kill() {

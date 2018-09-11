@@ -264,6 +264,35 @@ pub fn run_upgrader(upgrader: &[String]) -> io::Result<Child> {
     Ok(child)
 }
 
+pub fn run_exec_stop(cmd: &[String]) -> io::Result<Child> {
+    let self_pid = getpid();
+    let mut process = Command::new(&cmd[0]);
+    info!("start exec_stop. pid [{}]", self_pid);
+    process.args(&cmd[1..]);
+    process.stdin(Stdio::null());
+    process.stdout(Stdio::piped());
+    process.stderr(Stdio::piped());
+    let child = match process.spawn() {
+        Ok(mut child) => {
+            child.try_wait()?;
+            info!(
+                "running exec_stop process [{}]. pid [{}]",
+                &cmd[0],
+                child.id()
+            );
+            child
+        }
+        Err(e) => {
+            error!(
+                "fail spawn exec_stop process. caused by: {}. command {}",
+                e, &cmd[0]
+            );
+            return Err(e);
+        }
+    };
+    Ok(child)
+}
+
 pub fn process_exited(p: &mut Process) -> bool {
     p.try_wait().is_some()
 }

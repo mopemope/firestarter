@@ -1,8 +1,13 @@
 [web1] # set worker group name.
 
-# set startup process and args.
+# set to commands with their arguments that are executed when this worker is started.
 exec_start = "./demo/target/debug/demo"
 # exec_start = "/usr/bin/ls -al"
+
+# set to commands to execute to stop the service started via exec_start.
+# if you do not set it, sigterm will be sent to the exec_start process.
+# note that ack does not use this command.
+# exec_stop = ""
 
 # set the number of startup processes.
 numprocesses = 2

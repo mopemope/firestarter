@@ -20,6 +20,8 @@ pub struct Config {
 #[derive(Debug, Deserialize, Clone)]
 pub struct WorkerConfig {
     pub exec_start: String,
+    #[serde(default = "default_str")]
+    pub exec_stop: String,
     #[serde(default = "default_num")]
     pub numprocesses: u64,
     #[serde(default = "default_bool")]
@@ -62,6 +64,8 @@ pub struct WorkerConfig {
     pub upgrader_timeout: u64,
     #[serde(default = "default_vec_str")]
     pub exec_start_cmd: Vec<String>,
+    #[serde(default = "default_vec_str")]
+    pub exec_stop_cmd: Vec<String>,
 }
 
 fn default_bool() -> bool {
@@ -179,8 +183,11 @@ pub fn parse_config(path: &str) -> io::Result<Config> {
 
     for wrk_config in &mut wrkrs.values_mut() {
         // validate config
-        let cmd = parse_cmd(&wrk_config.exec_start).expect("fail parse cmd");
+        let cmd = parse_cmd(&wrk_config.exec_start).expect("fail parse exec_start");
         wrk_config.exec_start_cmd = cmd;
+        let cmd = parse_cmd(&wrk_config.exec_stop).expect("fail parse exec_stop");
+        wrk_config.exec_stop_cmd = cmd;
+
         if let Some(ref stdout) = wrk_config.stdout_log {
             let _stdout_log: LogFile = stdout.parse().unwrap();
         }
@@ -269,7 +276,7 @@ named!(command_token<CompleteStr, Token>,
 named!(command< CompleteStr, Vec<Token> >,
        terminated!(ws!(many1!(command_token)), eof!()));
 
-fn parse_cmd<'a>(cmd: &'a str) -> Result<Vec<String>, env::VarError> {
+fn parse_cmd(cmd: &str) -> Result<Vec<String>, env::VarError> {
     let tokens = match command(CompleteStr(cmd)) {
         Ok((_, result)) => result,
         Err(Err::Error(e)) | Err(Err::Failure(e)) => panic!("Error {:?}", e),
