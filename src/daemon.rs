@@ -113,9 +113,9 @@ impl Daemon {
             let config = &self.config.workers[name];
             if let Some(timeout) = config.upgrader_active_sec {
                 if monitor.is_upgrade_active_time(timeout) {
-                    if let Some(ref upgrader) = config.upgrader {
+                    if let Some(ref _upgrader) = config.upgrader {
                         if monitor.upgrade_process.is_none() {
-                            let mut proc = run_upgrader(upgrader)?;
+                            let mut proc = run_upgrader(&config.upgrader_cmd)?;
                             monitor.upgrade_process = Some(proc);
                         }
                     }

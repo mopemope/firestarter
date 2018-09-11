@@ -491,8 +491,8 @@ impl<'a> Worker<'a> {
         }
 
         if self.config.run_upgrader == RunUpgrader::OnUpgrade {
-            if let Some(ref upgrader) = self.config.upgrader {
-                let mut proc = run_upgrader(upgrader)?;
+            if let Some(ref _upgrader) = self.config.upgrader {
+                let mut proc = run_upgrader(&self.config.upgrader_cmd)?;
                 if !monitor.wait_on_upgrader(self, &mut proc)? {
                     return Err(io::Error::new(
                         io::ErrorKind::Other,

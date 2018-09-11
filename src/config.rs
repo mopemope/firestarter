@@ -56,16 +56,19 @@ pub struct WorkerConfig {
     #[serde(default = "default_zero")]
     pub live_check_timeout: u64,
 
-    pub upgrader: Option<Vec<String>>,
+    pub upgrader: Option<String>,
     #[serde(skip, default = "default_run_upgrader")]
     pub run_upgrader: RunUpgrader,
     pub upgrader_active_sec: Option<u64>,
     #[serde(default = "default_upgrader_timeout")]
     pub upgrader_timeout: u64,
-    #[serde(default = "default_vec_str")]
+
+    #[serde(skip, default = "default_vec_str")]
     pub exec_start_cmd: Vec<String>,
-    #[serde(default = "default_vec_str")]
+    #[serde(skip, default = "default_vec_str")]
     pub exec_stop_cmd: Vec<String>,
+    #[serde(skip, default = "default_vec_str")]
+    pub upgrader_cmd: Vec<String>,
 }
 
 fn default_bool() -> bool {
@@ -195,7 +198,9 @@ pub fn parse_config(path: &str) -> io::Result<Config> {
             let _stderr_log: LogFile = stderr.parse().unwrap();
         }
 
-        if let Some(ref _upgrader) = wrk_config.upgrader {
+        if let Some(ref upgrader) = wrk_config.upgrader {
+            let cmd = parse_cmd(upgrader).expect("fail parse upgrader");
+            wrk_config.upgrader_cmd = cmd;
             if wrk_config.upgrader_active_sec.is_some() {
                 wrk_config.run_upgrader = RunUpgrader::OnActiveSec;
             } else {

@@ -151,9 +151,9 @@ ack = "manual"
 # auto_upgrade = false
 
 # set upgrader program.
-# set the upgrader command.
+# set to the upgrader command.
 # run upgrade only when the upgrader command terminates normally.
-# upgrader = ["/a/b/upgrader"]
+# upgrader = "/a/b/upgrader --config abc"
 
 # set upgrade timing.
 # execute the upgrader command for each specified seconds.

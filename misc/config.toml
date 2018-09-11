@@ -1,13 +1,13 @@
 [worker1] # set worker group name.
 
 # set to commands with their arguments that are executed when this worker is started.
-# exec_start = "./demo/target/debug/demo"
-exec_start = "/usr/bin/emacs --fg-daemon"
+exec_start = "./demo/target/debug/demo"
+# exec_start = "/usr/bin/emacs --fg-daemon"
 
 # set to commands to execute to stop the service started via exec_start.
 # if you do not set it, sigterm will be sent to the exec_start process.
 # note that upgrade ack does not use this command.
-exec_stop = "/usr/bin/emacsclient --eval (kill-emacs)"
+# exec_stop = "/usr/bin/emacsclient --eval (kill-emacs)"
 
 # set the number of startup processes.
 numprocesses = 1
@@ -88,9 +88,9 @@ ack = "manual"
 # auto_upgrade = false
 
 # set upgrader program.
-# set the upgrader command.
+# set to the upgrader command.
 # run upgrade only when the upgrader command terminates normally.
-# upgrader = ["/a/b/upgrader"]
+upgrader = "/a/b/upgrader --config abc"
 
 # set upgrade timing.
 # execute the upgrader command for each specified seconds.
