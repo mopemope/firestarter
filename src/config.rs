@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::Read;
 use std::{env, io};
 
+use nom::types::CompleteStr;
+use nom::Err;
 use toml::from_str;
 
 use app::{APP_NAME, APP_NAME_UPPER};
@@ -17,8 +19,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct WorkerConfig {
-    #[serde(default = "default_vec_str")]
-    pub cmd: Vec<String>,
+    pub exec_start: String,
     #[serde(default = "default_num")]
     pub numprocesses: u64,
     #[serde(default = "default_bool")]
@@ -59,6 +60,8 @@ pub struct WorkerConfig {
     pub upgrader_active_sec: Option<u64>,
     #[serde(default = "default_upgrader_timeout")]
     pub upgrader_timeout: u64,
+    #[serde(default = "default_vec_str")]
+    pub exec_start_cmd: Vec<String>,
 }
 
 fn default_bool() -> bool {
@@ -69,6 +72,9 @@ fn default_num() -> u64 {
 }
 fn default_zero() -> u64 {
     0
+}
+fn default_str() -> String {
+    "".to_owned()
 }
 fn default_vec_str() -> Vec<String> {
     Vec::new()
@@ -173,6 +179,8 @@ pub fn parse_config(path: &str) -> io::Result<Config> {
 
     for wrk_config in &mut wrkrs.values_mut() {
         // validate config
+        let cmd = parse_cmd(&wrk_config.exec_start).expect("fail parse cmd");
+        wrk_config.exec_start_cmd = cmd;
         if let Some(ref stdout) = wrk_config.stdout_log {
             let _stdout_log: LogFile = stdout.parse().unwrap();
         }
@@ -192,4 +200,107 @@ pub fn parse_config(path: &str) -> io::Result<Config> {
     }
     config.workers = wrkrs;
     Ok(config)
+}
+
+fn token_char(ch: char) -> bool {
+    if ch.len_utf8() > 1 {
+        return false;
+    }
+    match ch {
+        '\x00'...'\x20' => false,
+        '\x7f' | '"' | '\'' | '>' | '<' | '|' | ';' | '{' | '}' | '$' => false,
+        _ => true,
+    }
+}
+
+fn var_char(ch: char) -> bool {
+    match ch {
+        'a'...'z' => true,
+        'A'...'Z' => true,
+        '0'...'9' => true,
+        '_' => true,
+        _ => false,
+    }
+}
+
+enum TokenPart {
+    Bare(String),
+    Placeholder,
+    EnvVariable(String),
+}
+
+struct Token(Vec<TokenPart>);
+
+impl Token {
+    fn into_string(self) -> Result<String, env::VarError> {
+        let mut token = String::from("");
+        for part in self.0 {
+            match part {
+                TokenPart::Bare(s) => token += &s,
+                TokenPart::Placeholder => token += "{}",
+                TokenPart::EnvVariable(name) => {
+                    debug!("Environment variable {}", name);
+                    token += &env::var(name)?
+                }
+            }
+        }
+        Ok(token)
+    }
+}
+
+named!(bare_token<CompleteStr, TokenPart>,
+       map!(take_while1_s!(token_char), |s| TokenPart::Bare(String::from(s.as_ref()))));
+
+named!(quoted_token<CompleteStr, TokenPart>,
+       map!(delimited!(tag_s!("\""), take_until_s!("\""), tag_s!("\"")),
+            |s| TokenPart::Bare(String::from(s.as_ref()))));
+
+named!(place_holder<CompleteStr, TokenPart>,
+       map!(tag_s!("{}"), |_| TokenPart::Placeholder));
+
+named!(env_var<CompleteStr, TokenPart>,
+       map!(preceded!(tag!("$"), take_while1_s!(var_char)),
+            |name| TokenPart::EnvVariable(String::from(name.as_ref()))));
+
+named!(command_token<CompleteStr, Token>,
+       map!(many1!(alt!(bare_token | quoted_token | place_holder | env_var)),
+            Token));
+
+named!(command< CompleteStr, Vec<Token> >,
+       terminated!(ws!(many1!(command_token)), eof!()));
+
+fn parse_cmd<'a>(cmd: &'a str) -> Result<Vec<String>, env::VarError> {
+    let tokens = match command(CompleteStr(cmd)) {
+        Ok((_, result)) => result,
+        Err(Err::Error(e)) | Err(Err::Failure(e)) => panic!("Error {:?}", e),
+        Err(Err::Incomplete(needed)) => panic!("Needed {:?}", needed),
+    };
+    tokens
+        .into_iter()
+        .map(|token| token.into_string())
+        .collect::<Result<Vec<_>, _>>()
+}
+
+#[test]
+fn test_parse_cmd() {
+    let tokens = parse_cmd(
+        r#"cmd 1 2
+                              3 "
+  4" {}"#,
+    ).unwrap();
+    assert_eq!("cmd", tokens[0]);
+    assert_eq!("1", tokens[1]);
+    assert_eq!("2", tokens[2]);
+    assert_eq!("3", tokens[3]);
+    assert_eq!("\n  4", tokens[4]);
+    assert_eq!("{}", tokens[5]);
+}
+
+#[test]
+fn test_parse_cmd_env() {
+    use env_logger;
+    env_logger::init();
+    env::set_var("MY_VAR", "VALUE");
+    let tokens = parse_cmd("echo $MY_VAR/dir").unwrap();
+    assert_eq!("VALUE/dir", tokens[1]);
 }

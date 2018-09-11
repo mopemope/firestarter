@@ -8,6 +8,8 @@ extern crate lazy_static;
 extern crate libc;
 extern crate mio;
 extern crate nix;
+#[macro_use]
+extern crate nom;
 extern crate regex;
 extern crate serde;
 #[macro_use]

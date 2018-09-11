@@ -13,7 +13,7 @@ fn is_modified(path: &path::PathBuf, current_mtime: &time::SystemTime) -> io::Re
 }
 
 pub fn cmd_path(config: &WorkerConfig) -> path::PathBuf {
-    let cmd = &config.cmd[0];
+    let cmd = &config.exec_start_cmd[0];
     let cmd_path = path::Path::new(cmd);
     if cmd_path.is_absolute() {
         cmd_path.to_owned()

@@ -218,7 +218,7 @@ impl<'a> Worker<'a> {
                 warn!("skip broken env configuration. {:?}", v);
             }
         }
-        if self.config.cmd.is_empty() {
+        if self.config.exec_start_cmd.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "fail command not found",

@@ -47,11 +47,10 @@ impl<'a> Process<'a> {
         } else {
             None
         };
-
         Process {
             id,
             name,
-            cmdline: &config.cmd,
+            cmdline: &config.exec_start_cmd,
             environment,
             working_directory,
             child: None,

@@ -1,7 +1,8 @@
 [web1] # set worker group name.
 
 # set startup process and args.
-cmd = ["./demo/target/debug/demo"]
+exec_start = "./demo/target/debug/demo"
+# exec_start = "/usr/bin/ls -al"
 
 # set the number of startup processes.
 numprocesses = 2
@@ -23,7 +24,7 @@ start_immediate = true
 
 # set shared socket addresses.
 # it also support unix domain socket. (e.g.: /tmp/foo.sock)
-socket_address = ["127.0.0.1:4000", "127.0.0.1:4001"]
+socket_address = ["127.0.0.1:4000"]
 
 # set processes environment.
 environments=["TEST_A=XXXX", "TEST_B=YYYY"]
@@ -96,4 +97,4 @@ ack = "manual"
 # [web2] # set other worker group name.
 
 # set startup process and args.
-# cmd = ["./demo/target/debug/demo"]
+# exec_start = "./demo/target/debug/demo"
