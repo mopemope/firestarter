@@ -474,7 +474,7 @@ impl Monitor {
             }
             Command::Stop => {
                 let signal = signal.unwrap_or(Signal::SIGTERM);
-                let pids = worker.signal_all(signal)?;
+                let pids = worker.stop_processes(self, signal)?;
                 CommandResponse {
                     status: Status::Ok,
                     command: command.clone(),
