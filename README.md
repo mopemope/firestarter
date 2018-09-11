@@ -61,16 +61,16 @@ $ firestarter run --config misc/config.toml
 The configuration file uses toml. An example is below.
 
 ```
-[web1] # set worker group name.
+[worker1] # set worker group name.
 
 # set to commands with their arguments that are executed when this worker is started.
-exec_start = "./demo/target/debug/demo"
-# exec_start = "/usr/bin/ls -al"
+# exec_start = "./demo/target/debug/demo"
+exec_start = "/usr/bin/emacs --fg-daemon"
 
 # set to commands to execute to stop the service started via exec_start.
 # if you do not set it, sigterm will be sent to the exec_start process.
-# note that ack does not use this command.
-# exec_stop = ""
+# note that upgrade ack does not use this command.
+exec_stop = "/usr/bin/emacsclient --eval (kill-emacs)"
 
 # set the number of startup processes.
 numprocesses = 1
@@ -173,10 +173,10 @@ Firestarter also provides a client that controls the running daemon.
 For example, you can check the status with the following command.
 
 ```
-$ firestarter ctrl web1 status
-send ctrl command [status] to [web1] worker
-[web1] active
-processes [24170, 24171]
+$ firestarter ctrl worker1 status
+send ctrl command [status] to [worker1] worker
+[worker1] active
+processes [24170]
 time 00:00:06
 ```
 

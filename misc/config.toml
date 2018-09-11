@@ -1,16 +1,16 @@
-[web1] # set worker group name.
+[worker1] # set worker group name.
 
 # set to commands with their arguments that are executed when this worker is started.
-exec_start = "./demo/target/debug/demo"
-# exec_start = "/usr/bin/ls -al"
+# exec_start = "./demo/target/debug/demo"
+exec_start = "/usr/bin/emacs --fg-daemon"
 
 # set to commands to execute to stop the service started via exec_start.
 # if you do not set it, sigterm will be sent to the exec_start process.
-# note that ack does not use this command.
-# exec_stop = ""
+# note that upgrade ack does not use this command.
+exec_stop = "/usr/bin/emacsclient --eval (kill-emacs)"
 
 # set the number of startup processes.
-numprocesses = 2
+numprocesses = 1
 
 # set working directory.
 # working_directory = "/tmp".
@@ -99,7 +99,7 @@ ack = "manual"
 # upgrader_timeout=60
 
 ######################################################################
-# [web2] # set other worker group name.
+# [worker2] # set other worker group name.
 
 # set startup process and args.
 # exec_start = "./demo/target/debug/demo"
