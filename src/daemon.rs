@@ -186,8 +186,13 @@ impl Daemon {
                     let cmd = read_daemon_command(&mut stream)?;
                     match cmd.command_type {
                         CommandType::CtrlWorker => self.send_command_worker(cmd, &mut stream)?,
-                        CommandType::List => self.send_list(&mut stream)?,
                         CommandType::Status => self.send_command_workers(cmd, &mut stream)?,
+                        CommandType::Stop => {
+                            self.send_command_workers(cmd, &mut stream)?;
+                            self.clean_process();
+                            return Ok(());
+                        }
+                        CommandType::List => self.send_list(&mut stream)?,
                     }
                 }
             }

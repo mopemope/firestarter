@@ -70,6 +70,8 @@ pub enum CommandType {
     Status,
     #[serde(rename = "ctrl_worker")]
     CtrlWorker,
+    #[serde(rename = "stop")]
+    Stop,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

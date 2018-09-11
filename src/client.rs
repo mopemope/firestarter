@@ -22,6 +22,11 @@ impl Client {
         self.send_status(sock_path)
     }
 
+    pub fn stop(&mut self, sock_path: &str) -> Result<(), Error> {
+        info!("stop daemon");
+        self.send_stop(sock_path)
+    }
+
     pub fn run(
         &mut self,
         sock_path: &str,
@@ -83,6 +88,26 @@ impl Client {
         };
         let dcmd = DaemonCommand {
             command_type: CommandType::Status,
+            worker: None,
+            command: Some(ctrl_cmd),
+            pid: pid as u32,
+        };
+        let res = send_daemon_list_command(sock_path, &dcmd)?;
+        for r in res {
+            println!("{}", r.to_string());
+        }
+        Ok(())
+    }
+
+    fn send_stop(&self, sock_path: &str) -> Result<(), Error> {
+        let pid = pid_t::from(getpid());
+        let ctrl_cmd = CtrlCommand {
+            command: Command::Stop,
+            pid: pid as u32,
+            signal: None,
+        };
+        let dcmd = DaemonCommand {
+            command_type: CommandType::Stop,
             worker: None,
             command: Some(ctrl_cmd),
             pid: pid as u32,

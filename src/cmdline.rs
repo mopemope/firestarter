@@ -11,7 +11,7 @@ use daemon::Daemon;
 lazy_static! {
     pub static ref SOCK_PATH: path::PathBuf = {
         let mut dir = env::temp_dir();
-        dir.push(format!("{}-control.socket", get_app_name() ));
+        dir.push(format!("{}-control.socket", get_app_name()));
         dir
     };
 }
@@ -56,6 +56,17 @@ fn make_app() -> App<'static, 'static> {
                         .default_value(sock_path)
                         .help("set ctrl socket path."),
                 ),
+        )
+        .subcommand(
+            SubCommand::with_name("stop").about("Stop daemon").arg(
+                Arg::with_name("socket-path")
+                    .multiple(false)
+                    .value_name("PATH")
+                    .short("d")
+                    .long("socket-path")
+                    .default_value(sock_path)
+                    .help("set ctrl socket path."),
+            ),
         )
         .subcommand(
             SubCommand::with_name("status")
@@ -130,6 +141,12 @@ pub fn execute() -> Result<(), Error> {
                 .value_of("socket-path")
                 .expect("require control socket path");
             Client::new().list(sock_path)
+        }
+        ("stop", Some(m)) => {
+            let sock_path = m
+                .value_of("socket-path")
+                .expect("require control socket path");
+            Client::new().stop(sock_path)
         }
         ("status", Some(m)) => {
             let sock_path = m
