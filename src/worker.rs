@@ -540,9 +540,15 @@ impl<'a> Worker<'a> {
         }
     }
 
-    fn stop_processes(&mut self, monitor: &mut Monitor, signal: Signal) -> io::Result<Vec<u32>> {
+    pub fn stop_processes(
+        &mut self,
+        monitor: &mut Monitor,
+        signal: Signal,
+    ) -> io::Result<Vec<u32>> {
         let mut old_pid = Vec::new();
-
+        if self.processes.is_empty() {
+            return Ok(old_pid);
+        }
         if self.config.exec_stop_cmd.is_empty() {
             for p in &mut self.processes {
                 if let Some(pid) = p.pid() {
@@ -551,7 +557,6 @@ impl<'a> Worker<'a> {
                     old_pid.push(pid);
                 }
             }
-
             monitor.wait_process_io(self, 1)?;
         } else {
             for p in &mut self.processes {
