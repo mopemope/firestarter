@@ -238,7 +238,7 @@ impl<'a> Process<'a> {
 pub fn run_upgrader(upgrader: &[String]) -> io::Result<Child> {
     let self_pid = getpid();
     let mut process = Command::new(&upgrader[0]);
-    info!("start upgrader. pid [{}]", self_pid);
+    info!("start upgrader [{:?}]. pid [{}]", &upgrader, self_pid);
     process.args(&upgrader[1..]);
     process.stdin(Stdio::null());
     process.stdout(Stdio::piped());
@@ -247,16 +247,16 @@ pub fn run_upgrader(upgrader: &[String]) -> io::Result<Child> {
         Ok(mut child) => {
             child.try_wait()?;
             info!(
-                "running upgrader process [{}]. pid [{}]",
-                &upgrader[0],
+                "running upgrader process [{:?}]. pid [{}]",
+                &upgrader,
                 child.id()
             );
             child
         }
         Err(e) => {
             error!(
-                "fail spawn upgrader process. caused by: {}. command {}",
-                e, &upgrader[0]
+                "fail spawn upgrader process. caused by: {}. command {:?}",
+                e, &upgrader
             );
             return Err(e);
         }
@@ -267,7 +267,7 @@ pub fn run_upgrader(upgrader: &[String]) -> io::Result<Child> {
 pub fn run_exec_stop(cmd: &[String]) -> io::Result<Child> {
     let self_pid = getpid();
     let mut process = Command::new(&cmd[0]);
-    info!("start exec_stop. pid [{}]", self_pid);
+    info!("start exec_stop [{:?}]. pid [{}]", &cmd, self_pid);
     process.args(&cmd[1..]);
     process.stdin(Stdio::null());
     process.stdout(Stdio::piped());
@@ -276,16 +276,16 @@ pub fn run_exec_stop(cmd: &[String]) -> io::Result<Child> {
         Ok(mut child) => {
             child.try_wait()?;
             info!(
-                "running exec_stop process [{}]. pid [{}]",
-                &cmd[0],
+                "running exec_stop process [{:?}]. pid [{}]",
+                &cmd,
                 child.id()
             );
             child
         }
         Err(e) => {
             error!(
-                "fail spawn exec_stop process. caused by: {}. command {}",
-                e, &cmd[0]
+                "fail spawn exec_stop process. caused by: {}. command {:?}",
+                e, &cmd
             );
             return Err(e);
         }
