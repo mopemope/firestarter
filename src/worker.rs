@@ -563,16 +563,17 @@ impl<'a> Worker<'a> {
             let stopper = run_exec_stop(&self.config.exec_stop_cmd)?;
             monitor.wait_process_io(self, 1)?;
             let pid = stopper.id();
-
             let output = stopper.wait_with_output()?;
+            let code = output.status.code();
+            info!("exec stop process exit code {:?}. pid [{}]", code, pid);
             let buf = String::from_utf8(output.stdout).unwrap();
             if !buf.is_empty() {
-                info!("process stdout. pid [{}]\n{}", pid, buf);
+                info!("exec stop process stdout. pid [{}]\n{}", pid, buf);
             }
 
             let buf = String::from_utf8(output.stderr).unwrap();
             if !buf.is_empty() {
-                info!("process stderr. pid [{}]\n{}", pid, buf);
+                info!("exec stop process stderr. pid [{}]\n{}", pid, buf);
             }
         }
 
