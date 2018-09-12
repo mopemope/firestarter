@@ -50,6 +50,7 @@ SUBCOMMANDS:
     list      Show worker names
     run       Run daemon
     status    Show worker status
+    stop      Stop daemon
 ```
 
 Example
