@@ -189,6 +189,7 @@ impl Daemon {
                         CommandType::Status => self.send_command_workers(cmd, &mut stream)?,
                         CommandType::Stop => {
                             self.send_command_workers(cmd, &mut stream)?;
+                            self.stop_monitors();
                             self.clean_process();
                             return Ok(());
                         }
@@ -336,6 +337,14 @@ impl Daemon {
             }
         }
         Ok(())
+    }
+
+    fn stop_monitors(&mut self) {
+        for mon in self.monitors.values_mut() {
+            if let Err(e) = mon.stop() {
+                error!("fail stop monitor process. caused by: {}", e);
+            }
+        }
     }
 
     fn clean_process(&mut self) {

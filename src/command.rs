@@ -33,6 +33,8 @@ pub enum Command {
     Dec,
     #[serde(rename = "worker:status")]
     Status,
+    #[serde(rename = "monitor:stop")]
+    StopMonitor,
 }
 
 // Use from client

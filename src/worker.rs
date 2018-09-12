@@ -268,13 +268,11 @@ impl<'a> Worker<'a> {
     pub fn kill(&mut self) -> io::Result<Vec<u32>> {
         debug!("kill worker processes {}", self.processes.len());
         let mut res = Vec::new();
-        let mut i = 0;
-        while i != self.processes.len() {
-            if let Some(pid) = Worker::kill_process(&mut self.processes[i]) {
+        while let Some(ref mut p) = self.processes.pop() {
+            if let Some(pid) = Worker::kill_process(p) {
                 res.push(pid);
             }
-            self.processes.remove(i);
-            i += 1;
+            p.wait();
         }
         self.updated_at = Utc::now();
         Ok(res)
@@ -294,6 +292,26 @@ impl<'a> Worker<'a> {
                 info!("send signal {:?} to pid [{}]", sig, pid);
                 pids.push(pid);
             };
+        }
+        debug!("sended signal pid {:?}", pids);
+        Ok(pids)
+    }
+
+    pub fn signal_and_wait(&mut self, sig: Signal) -> io::Result<Vec<u32>> {
+        let mut pids: Vec<u32> = Vec::new();
+        while let Some(ref mut p) = self.processes.pop() {
+            let pid = p.pid().unwrap();
+            debug!("send signal {:?}. {}", sig, p.process_name());
+            if let Err(e) = pid.signal(sig) {
+                warn!(
+                    "fail send signal {:?} to pid [{}]. caused by: {}",
+                    sig, pid, e
+                );
+            } else {
+                info!("send signal {:?} to pid [{}]", sig, pid);
+                pids.push(pid);
+            };
+            p.wait();
         }
         debug!("sended signal pid {:?}", pids);
         Ok(pids)

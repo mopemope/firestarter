@@ -130,7 +130,12 @@ impl MonitorProcess {
 
     pub fn remove_process_watch_files(&self) {
         if let Some(root) = env::temp_dir().to_str() {
-            if let Ok(paths) = glob(&format!("{}/{}-process-{}-*", root, get_app_name() , self.name)) {
+            if let Ok(paths) = glob(&format!(
+                "{}/{}-process-{}-*",
+                root,
+                get_app_name(),
+                self.name
+            )) {
                 for entry in paths {
                     match entry {
                         Ok(ref path) => {
@@ -346,6 +351,14 @@ impl MonitorProcess {
         Ok(false)
     }
 
+    pub fn stop(&mut self) -> io::Result<()> {
+        self.send_ctrl_command(&CtrlCommand {
+            command: Command::StopMonitor,
+            pid: 0,
+            signal: Some(Signal::SIGTERM),
+        })
+    }
+
     pub fn kill_all(&mut self) -> io::Result<()> {
         self.send_ctrl_command(&CtrlCommand {
             command: Command::KillAll,
@@ -547,6 +560,18 @@ impl Monitor {
                     ),
                 }
             }
+            Command::StopMonitor => {
+                self.active = false;
+                let signal = signal.unwrap_or(Signal::SIGTERM);
+                let _pids = worker.signal_and_wait(signal)?;
+                CommandResponse {
+                    status: Status::Ok,
+                    command: command.clone(),
+                    pid: self_pid,
+                    message: format!("stop monitor pid {:?}", self_pid),
+                }
+            }
+
             cmd => CommandResponse {
                 status: Status::Error,
                 command: cmd.clone(),

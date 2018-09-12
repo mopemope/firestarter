@@ -183,6 +183,37 @@ impl<'a> Process<'a> {
         }
     }
 
+    pub fn wait(&mut self) -> Option<i32> {
+        let &mut Process {
+            ref mut child,
+            ref watch_file,
+            ..
+        } = self;
+
+        let child: &mut Child = child.as_mut()?;
+        let pid = child.id();
+        match child.wait() {
+            Ok(status) => {
+                Process::remove_watch_file(watch_file);
+                if status.success() {
+                    status.code()
+                } else {
+                    warn!(
+                        "exited process. catch signal {:?} pid [{}]",
+                        status.signal(),
+                        pid
+                    );
+                    Some(-1)
+                }
+            }
+            Err(e) => {
+                error!("fail process wait. caused by: {}", e);
+                Process::remove_watch_file(watch_file);
+                Some(-1)
+            }
+        }
+    }
+
     fn remove_watch_file(watch_file: &Option<PathBuf>) {
         if let Some(ref watch_file) = watch_file {
             if let Err(e) = fs::remove_file(watch_file) {
@@ -275,11 +306,7 @@ pub fn run_exec_stop(cmd: &[String]) -> io::Result<Child> {
     let child = match process.spawn() {
         Ok(mut child) => {
             child.try_wait()?;
-            info!(
-                "running exec_stop process {:?}. pid [{}]",
-                &cmd,
-                child.id()
-            );
+            info!("running exec_stop process {:?}. pid [{}]", &cmd, child.id());
             child
         }
         Err(e) => {
