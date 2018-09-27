@@ -1,6 +1,6 @@
 [package]
 name = "firestarter"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Yutaka Matsubara <yutaka.matsubara@gmail.com>"]
 description = "A process and shared socket manager"
 keywords = ["socket", "process-manager", "systemd", "socketactivation"]
@@ -11,7 +11,7 @@ license = "MIT/Apache-2.0"
 exclude = ["demo"]
 
 [dependencies]
-clap = "2.31"
+clap = "2.3"
 failure = "0.1"
 failure_derive = "0.1"
 regex = "1.0"
