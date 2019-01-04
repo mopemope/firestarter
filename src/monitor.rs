@@ -894,23 +894,25 @@ impl Monitor {
                                 return Ok(false);
                             }
                         }
-                        Ok(None) => if let Ok(elapsed) = upgrade_timeout.elapsed() {
-                            if elapsed.as_secs() > worker.config.upgrader_timeout {
-                                // timeout upgrade
-                                if let Err(e) = upgrader.kill() {
+                        Ok(None) => {
+                            if let Ok(elapsed) = upgrade_timeout.elapsed() {
+                                if elapsed.as_secs() > worker.config.upgrader_timeout {
+                                    // timeout upgrade
+                                    if let Err(e) = upgrader.kill() {
+                                        warn!(
+                                            "fail kill upgrader process pid [{}]. caused by: {}",
+                                            upgrader.id(),
+                                            e
+                                        );
+                                    }
                                     warn!(
-                                        "fail kill upgrader process pid [{}]. caused by: {}",
-                                        upgrader.id(),
-                                        e
+                                        "upgrader process timeout. kill upgrader process pid [{}]",
+                                        upgrader.id()
                                     );
+                                    return Ok(false);
                                 }
-                                warn!(
-                                    "upgrader process timeout. kill upgrader process pid [{}]",
-                                    upgrader.id()
-                                );
-                                return Ok(false);
                             }
-                        },
+                        }
                         Err(e) => {
                             warn!("upgrade process terminated abnormally. caused by: {}", e);
                             return Ok(false);

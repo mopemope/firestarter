@@ -252,7 +252,10 @@ impl LogFile {
             } = self;
 
             if policy.rotate(buf, log_file, &inner)? {
-                let file = OpenOptions::new().append(true).create(true).open(log_file)?;
+                let file = OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(log_file)?;
                 Some(file)
             } else {
                 None

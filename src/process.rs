@@ -327,14 +327,16 @@ pub fn process_exited(p: &mut Process) -> bool {
 pub fn process_normally_exited(p: &mut Child) -> io::Result<bool> {
     let status = p.try_wait()?;
     match status {
-        Some(status) => if status.success() {
-            Ok(true)
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                "process exit_code is not 0",
-            ))
-        },
+        Some(status) => {
+            if status.success() {
+                Ok(true)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "process exit_code is not 0",
+                ))
+            }
+        }
         _ => Ok(false),
     }
 }

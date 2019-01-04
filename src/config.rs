@@ -298,7 +298,8 @@ fn test_parse_cmd() {
         r#"cmd 1 2
                               3 "
   4" {}"#,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!("cmd", tokens[0]);
     assert_eq!("1", tokens[1]);
     assert_eq!("2", tokens[2]);
