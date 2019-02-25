@@ -2,8 +2,8 @@ use failure::Error;
 use libc::pid_t;
 use nix::unistd::getpid;
 
-use command::*;
-use signal::Signal;
+use crate::command::*;
+use crate::signal::Signal;
 
 pub struct Client {}
 

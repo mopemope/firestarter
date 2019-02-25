@@ -13,12 +13,12 @@ use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet};
 use nix::unistd::{getpid, Pid};
 use serde_json;
 
-use command::*;
-use config::Config;
-use monitor::{ExitStatus, MonitorProcess};
-use process::{process_normally_exited, process_output, run_upgrader};
-use reloader;
-use sock::ListenFd;
+use crate::command::*;
+use crate::config::Config;
+use crate::monitor::{ExitStatus, MonitorProcess};
+use crate::process::{process_normally_exited, process_output, run_upgrader};
+use crate::reloader;
+use crate::sock::ListenFd;
 
 extern "C" fn handle_signal(_signum: i32) {}
 
@@ -115,7 +115,7 @@ impl Daemon {
                 if monitor.is_upgrade_active_time(timeout) {
                     if let Some(ref _upgrader) = config.upgrader {
                         if monitor.upgrade_process.is_none() {
-                            let mut proc = run_upgrader(&config.upgrader_cmd)?;
+                            let proc = run_upgrader(&config.upgrader_cmd)?;
                             monitor.upgrade_process = Some(proc);
                         }
                     }

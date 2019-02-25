@@ -1,6 +1,6 @@
 use std::{io, path, time};
 
-use config::WorkerConfig;
+use crate::config::WorkerConfig;
 
 fn is_modified(path: &path::PathBuf, current_mtime: &time::SystemTime) -> io::Result<bool> {
     let metadata = path.metadata()?;

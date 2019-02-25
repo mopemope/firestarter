@@ -15,15 +15,15 @@ use nix::sys::signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, fork, getpid, ForkResult, Pid};
 
-use app::{get_app_name, APP_NAME_UPPER};
-use command::*;
-use config::WorkerConfig;
-use process::{process_exited, process_output};
-use reloader;
-use signal::Signal;
-use sock::ListenFd;
-use utils::{format_duration, set_nonblock};
-use worker::Worker;
+use crate::app::{get_app_name, APP_NAME_UPPER};
+use crate::command::*;
+use crate::config::WorkerConfig;
+use crate::process::{process_exited, process_output};
+use crate::reloader;
+use crate::signal::Signal;
+use crate::sock::ListenFd;
+use crate::utils::{format_duration, set_nonblock};
+use crate::worker::Worker;
 
 extern "C" fn handle_signal(signum: i32) {
     let s = signum as libc::c_int;
@@ -894,23 +894,25 @@ impl Monitor {
                                 return Ok(false);
                             }
                         }
-                        Ok(None) => if let Ok(elapsed) = upgrade_timeout.elapsed() {
-                            if elapsed.as_secs() > worker.config.upgrader_timeout {
-                                // timeout upgrade
-                                if let Err(e) = upgrader.kill() {
+                        Ok(None) => {
+                            if let Ok(elapsed) = upgrade_timeout.elapsed() {
+                                if elapsed.as_secs() > worker.config.upgrader_timeout {
+                                    // timeout upgrade
+                                    if let Err(e) = upgrader.kill() {
+                                        warn!(
+                                            "fail kill upgrader process pid [{}]. caused by: {}",
+                                            upgrader.id(),
+                                            e
+                                        );
+                                    }
                                     warn!(
-                                        "fail kill upgrader process pid [{}]. caused by: {}",
-                                        upgrader.id(),
-                                        e
+                                        "upgrader process timeout. kill upgrader process pid [{}]",
+                                        upgrader.id()
                                     );
+                                    return Ok(false);
                                 }
-                                warn!(
-                                    "upgrader process timeout. kill upgrader process pid [{}]",
-                                    upgrader.id()
-                                );
-                                return Ok(false);
                             }
-                        },
+                        }
                         Err(e) => {
                             warn!("upgrade process terminated abnormally. caused by: {}", e);
                             return Ok(false);

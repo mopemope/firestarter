@@ -4,7 +4,7 @@ use std::{env, io, time};
 use chrono::Duration;
 use libc;
 
-use app::{get_app_name};
+use crate::app::get_app_name;
 
 pub trait IsMinusOne {
     fn is_minus_one(&self) -> bool;

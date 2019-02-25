@@ -6,13 +6,13 @@ use std::{io, thread, time};
 use chrono::{DateTime, Duration, Utc};
 use nix::unistd::getpid;
 
-use config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
-use logs::LogFile;
-use monitor::{Monitor, OutputKind};
-use process::{
+use crate::config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
+use crate::logs::LogFile;
+use crate::monitor::{Monitor, OutputKind};
+use crate::process::{
     output_stderr_log, output_stdout_log, process_exited, run_exec_stop, run_upgrader, Process,
 };
-use signal::{Signal, SignalSend};
+use crate::signal::{Signal, SignalSend};
 
 // #[derive(Debug)]
 pub struct Worker<'a> {
@@ -204,7 +204,7 @@ impl<'a> Worker<'a> {
     fn spawn_process(&mut self) -> io::Result<Process<'a>> {
         self.id += 1;
         let mut penv: HashMap<String, String> = HashMap::new();
-        for mut env in &self.config.environments {
+        for env in &self.config.environments {
             let v: Vec<&str> = env.splitn(2, '=').collect();
             if v.len() == 2 {
                 penv.insert(v[0].to_string(), v[1].to_string());
@@ -212,7 +212,7 @@ impl<'a> Worker<'a> {
                 warn!("skip broken env configuration. {:?}", v);
             }
         }
-        for mut env in &self.extra_env {
+        for env in &self.extra_env {
             let v: Vec<&str> = env.splitn(2, '=').collect();
             if v.len() == 2 {
                 penv.insert(v[0].to_string(), v[1].to_string());

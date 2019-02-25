@@ -9,9 +9,9 @@ use std::{fs, io, thread, time};
 use libc;
 use nix::unistd::getpid;
 
-use app::APP_NAME_UPPER;
-use config::WorkerConfig;
-use utils::{get_process_watch_file, timeout_process};
+use crate::app::APP_NAME_UPPER;
+use crate::config::WorkerConfig;
+use crate::utils::{get_process_watch_file, timeout_process};
 
 #[derive(Debug)]
 pub struct Process<'a> {
@@ -327,14 +327,16 @@ pub fn process_exited(p: &mut Process) -> bool {
 pub fn process_normally_exited(p: &mut Child) -> io::Result<bool> {
     let status = p.try_wait()?;
     match status {
-        Some(status) => if status.success() {
-            Ok(true)
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                "process exit_code is not 0",
-            ))
-        },
+        Some(status) => {
+            if status.success() {
+                Ok(true)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "process exit_code is not 0",
+                ))
+            }
+        }
         _ => Ok(false),
     }
 }
