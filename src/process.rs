@@ -9,9 +9,9 @@ use std::{fs, io, thread, time};
 use libc;
 use nix::unistd::getpid;
 
-use app::APP_NAME_UPPER;
-use config::WorkerConfig;
-use utils::{get_process_watch_file, timeout_process};
+use crate::app::APP_NAME_UPPER;
+use crate::config::WorkerConfig;
+use crate::utils::{get_process_watch_file, timeout_process};
 
 #[derive(Debug)]
 pub struct Process<'a> {

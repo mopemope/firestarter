@@ -15,15 +15,15 @@ use nix::sys::signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, fork, getpid, ForkResult, Pid};
 
-use app::{get_app_name, APP_NAME_UPPER};
-use command::*;
-use config::WorkerConfig;
-use process::{process_exited, process_output};
-use reloader;
-use signal::Signal;
-use sock::ListenFd;
-use utils::{format_duration, set_nonblock};
-use worker::Worker;
+use crate::app::{get_app_name, APP_NAME_UPPER};
+use crate::command::*;
+use crate::config::WorkerConfig;
+use crate::process::{process_exited, process_output};
+use crate::reloader;
+use crate::signal::Signal;
+use crate::sock::ListenFd;
+use crate::utils::{format_duration, set_nonblock};
+use crate::worker::Worker;
 
 extern "C" fn handle_signal(signum: i32) {
     let s = signum as libc::c_int;

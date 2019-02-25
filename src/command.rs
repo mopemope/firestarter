@@ -9,7 +9,7 @@ use failure::{err_msg, Error};
 use nix::unistd::getpid;
 use serde_json;
 
-use signal::Signal;
+use crate::signal::Signal;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Command {

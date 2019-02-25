@@ -7,9 +7,9 @@ use nom::types::CompleteStr;
 use nom::Err;
 use toml::from_str;
 
-use app::{get_app_name, APP_NAME_UPPER};
-use logs::LogFile;
-use signal;
+use crate::app::{get_app_name, APP_NAME_UPPER};
+use crate::logs::LogFile;
+use crate::signal;
 
 #[derive(Debug, Clone)]
 pub struct Config {

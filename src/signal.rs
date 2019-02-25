@@ -4,7 +4,7 @@ use std::str::FromStr;
 use failure::{err_msg, Error};
 use libc;
 
-use utils::cvt;
+use crate::utils::cvt;
 
 pub fn send_sigkill(pid: libc::pid_t) -> io::Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGKILL)).map(|_| ()) }
