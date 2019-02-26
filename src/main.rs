@@ -1,32 +1,3 @@
-// extern crate chrono;
-// extern crate clap;
-// extern crate console;
-// extern crate failure;
-// extern crate glob;
-
-#[macro_use]
-extern crate lazy_static;
-// extern crate libc;
-// extern crate mio;
-// extern crate nix;
-
-#[macro_use]
-extern crate nom;
-
-// extern crate regex;
-// extern crate serde;
-
-#[macro_use]
-extern crate serde_derive;
-
-// extern crate serde_json;
-
-//#[macro_use]
-//extern crate log;
-
-// extern crate env_logger;
-// extern crate toml;
-
 use log::error;
 
 mod app;

@@ -8,6 +8,7 @@ use std::{io, path};
 use failure::{err_msg, Error};
 use log::{debug, warn};
 use nix::unistd::getpid;
+use serde_derive::{Deserialize, Serialize};
 use serde_json;
 
 use crate::signal::Signal;

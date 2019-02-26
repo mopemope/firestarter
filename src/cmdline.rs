@@ -2,6 +2,7 @@ use std::{env, path};
 
 use clap::{App, AppSettings, Arg, SubCommand};
 use failure::Error;
+use lazy_static::lazy_static;
 
 use crate::app::{get_app_name, APP_NAME};
 use crate::client::Client;
