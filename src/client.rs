@@ -1,5 +1,6 @@
 use failure::Error;
 use libc::pid_t;
+use log::info;
 use nix::unistd::getpid;
 
 use crate::command::*;

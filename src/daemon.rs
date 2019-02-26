@@ -6,6 +6,7 @@ use std::{fs, io, path, thread, time};
 
 use failure::{err_msg, Error};
 use libc::pid_t;
+use log::{debug, error, info, warn};
 use mio::unix::EventedFd;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use nix::sys::signal;

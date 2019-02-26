@@ -9,6 +9,7 @@ use std::{env, fs, io, path, thread, time};
 use failure::{err_msg, Error};
 use glob::glob;
 use libc;
+use log::{debug, error, info, trace, warn};
 use mio::unix::EventedFd;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use nix::sys::signal;

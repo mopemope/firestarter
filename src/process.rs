@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::{fs, io, thread, time};
 
 use libc;
+use log::{debug, error, info, warn};
 use nix::unistd::getpid;
 
 use crate::app::APP_NAME_UPPER;

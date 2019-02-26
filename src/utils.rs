@@ -3,6 +3,7 @@ use std::{env, io, time};
 
 use chrono::Duration;
 use libc;
+use log::warn;
 
 use crate::app::get_app_name;
 

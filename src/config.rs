@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::{env, io};
 
+use log::debug;
 use nom::types::CompleteStr;
 use nom::Err;
 use toml::from_str;

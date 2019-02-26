@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Local, Timelike, Utc};
 use failure::{err_msg, Error};
 use glob::glob;
+use log::{debug, warn};
 
 const MIDNIGHT: u64 = 60 * 60 * 24;
 

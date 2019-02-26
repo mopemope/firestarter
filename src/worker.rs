@@ -4,6 +4,7 @@ use std::os::unix::io::AsRawFd;
 use std::{io, thread, time};
 
 use chrono::{DateTime, Duration, Utc};
+use log::{debug, info, warn};
 use nix::unistd::getpid;
 
 use crate::config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
