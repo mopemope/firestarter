@@ -23,8 +23,6 @@ impl IsMinusOne for isize {
 }
 
 pub fn cvt<T: IsMinusOne>(t: T) -> io::Result<T> {
-    use std::io;
-
     if t.is_minus_one() {
         Err(io::Error::last_os_error())
     } else {

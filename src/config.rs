@@ -6,8 +6,8 @@ use std::{env, io};
 use log::debug;
 use nom::types::CompleteStr;
 use nom::{
-    alt, delimited, eof, many1, map, named, preceded, tag, tag_s, take_until_s, take_while1_s,
-    terminated, ws, Err,
+    alt, delimited, eof, many1, map, named, preceded, tag, take_until, take_while1, terminated, ws,
+    Err,
 };
 use serde_derive::Deserialize;
 use toml::from_str;
@@ -223,7 +223,7 @@ fn token_char(ch: char) -> bool {
         return false;
     }
     match ch {
-        '\x00'...'\x20' => false,
+        '\x00'..='\x20' => false,
         '\x7f' | '"' | '\'' | '>' | '<' | '|' | ';' | '{' | '}' | '$' => false,
         _ => true,
     }
@@ -231,9 +231,9 @@ fn token_char(ch: char) -> bool {
 
 fn var_char(ch: char) -> bool {
     match ch {
-        'a'...'z' => true,
-        'A'...'Z' => true,
-        '0'...'9' => true,
+        'a'..='z' => true,
+        'A'..='Z' => true,
+        '0'..='9' => true,
         '_' => true,
         _ => false,
     }
@@ -265,17 +265,17 @@ impl Token {
 }
 
 named!(bare_token<CompleteStr, TokenPart>,
-       map!(take_while1_s!(token_char), |s| TokenPart::Bare(String::from(s.as_ref()))));
+       map!(take_while1!(token_char), |s| TokenPart::Bare(String::from(s.as_ref()))));
 
 named!(quoted_token<CompleteStr, TokenPart>,
-       map!(delimited!(tag_s!("\""), take_until_s!("\""), tag_s!("\"")),
+       map!(delimited!(tag!("\""), take_until!("\""), tag!("\"")),
             |s| TokenPart::Bare(String::from(s.as_ref()))));
 
 named!(place_holder<CompleteStr, TokenPart>,
-       map!(tag_s!("{}"), |_| TokenPart::Placeholder));
+       map!(tag!("{}"), |_| TokenPart::Placeholder));
 
 named!(env_var<CompleteStr, TokenPart>,
-       map!(preceded!(tag!("$"), take_while1_s!(var_char)),
+       map!(preceded!(tag!("$"), take_while1!(var_char)),
             |name| TokenPart::EnvVariable(String::from(name.as_ref()))));
 
 named!(command_token<CompleteStr, Token>,

@@ -221,11 +221,11 @@ impl RotatePolicy for TimedRotatePolicy {
 pub struct LogFile {
     inner: Option<File>,
     log_file: PathBuf,
-    policy: Box<RotatePolicy>,
+    policy: Box<dyn RotatePolicy>,
 }
 
 impl LogFile {
-    pub fn new(log_file: PathBuf, policy: Box<RotatePolicy>) -> Self {
+    pub fn new(log_file: PathBuf, policy: Box<dyn RotatePolicy>) -> Self {
         LogFile {
             inner: None,
             log_file,
