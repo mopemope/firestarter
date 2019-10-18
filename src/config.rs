@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
-use std::{env, io};
-
+use crate::app::{get_app_name, APP_NAME_UPPER};
+use crate::logs::LogFile;
+use crate::signal;
 use log::debug;
 use nom::types::CompleteStr;
 use nom::{
@@ -10,11 +8,11 @@ use nom::{
     Err,
 };
 use serde_derive::Deserialize;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::{env, io};
 use toml::from_str;
-
-use crate::app::{get_app_name, APP_NAME_UPPER};
-use crate::logs::LogFile;
-use crate::signal;
 
 #[derive(Debug, Clone)]
 pub struct Config {

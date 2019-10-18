@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::io::Write;
-use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::{fs, io, path, thread, time};
-
+use crate::command::*;
+use crate::config::Config;
+use crate::monitor::{ExitStatus, MonitorProcess};
+use crate::process::{process_normally_exited, process_output, run_upgrader};
+use crate::reloader;
+use crate::sock::ListenFd;
 use failure::{err_msg, Error};
 use libc::pid_t;
 use log::{debug, error, info, warn};
@@ -13,13 +13,11 @@ use nix::sys::signal;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet};
 use nix::unistd::{getpid, Pid};
 use serde_json;
-
-use crate::command::*;
-use crate::config::Config;
-use crate::monitor::{ExitStatus, MonitorProcess};
-use crate::process::{process_normally_exited, process_output, run_upgrader};
-use crate::reloader;
-use crate::sock::ListenFd;
+use std::collections::HashMap;
+use std::io::Write;
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::{fs, io, path, thread, time};
 
 extern "C" fn handle_signal(_signum: i32) {}
 

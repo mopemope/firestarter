@@ -1,10 +1,9 @@
+use crate::command::*;
+use crate::signal::Signal;
 use failure::Error;
 use libc::pid_t;
 use log::info;
 use nix::unistd::getpid;
-
-use crate::command::*;
-use crate::signal::Signal;
 
 pub struct Client {}
 

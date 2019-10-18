@@ -1,3 +1,9 @@
+use crate::app::APP_NAME_UPPER;
+use crate::config::WorkerConfig;
+use crate::utils::{get_process_watch_file, timeout_process};
+use libc;
+use log::{debug, error, info, warn};
+use nix::unistd::getpid;
 use std::collections::HashMap;
 use std::io::{copy, Read, Write};
 use std::os::unix::process::CommandExt;
@@ -5,14 +11,6 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::{fs, io, thread, time};
-
-use libc;
-use log::{debug, error, info, warn};
-use nix::unistd::getpid;
-
-use crate::app::APP_NAME_UPPER;
-use crate::config::WorkerConfig;
-use crate::utils::{get_process_watch_file, timeout_process};
 
 #[derive(Debug)]
 pub struct Process<'a> {

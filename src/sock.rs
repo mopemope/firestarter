@@ -1,14 +1,13 @@
-use std::fmt::Display;
-use std::net::{Ipv4Addr, SocketAddr};
-use std::os::unix::io::RawFd;
-use std::path::PathBuf;
-use std::str::FromStr;
-
 use failure::{err_msg, Error};
 use lazy_static::lazy_static;
 use libc::close;
 use nix::sys::socket;
 use regex::Regex;
+use std::fmt::Display;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::os::unix::io::RawFd;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 lazy_static! {
     static ref SPLIT_PREFIX: Regex = Regex::new(r"^([a-zA-Z]+)::(.+)$").unwrap();

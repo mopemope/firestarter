@@ -1,13 +1,11 @@
-use std::{env, path};
-
-use clap::{App, AppSettings, Arg, SubCommand};
-use failure::Error;
-use lazy_static::lazy_static;
-
 use crate::app::{get_app_name, APP_NAME};
 use crate::client::Client;
 use crate::config::parse_config;
 use crate::daemon::Daemon;
+use clap::{App, AppSettings, Arg, SubCommand};
+use failure::Error;
+use lazy_static::lazy_static;
+use std::{env, path};
 
 lazy_static! {
     pub static ref SOCK_PATH: path::PathBuf = {

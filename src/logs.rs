@@ -1,3 +1,7 @@
+use chrono::{DateTime, Local, Timelike, Utc};
+use failure::{err_msg, Error};
+use glob::glob;
+use log::{debug, warn};
 use std::ffi::OsStr;
 use std::fs::{remove_file, rename, File, OpenOptions};
 use std::io;
@@ -5,11 +9,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
-
-use chrono::{DateTime, Local, Timelike, Utc};
-use failure::{err_msg, Error};
-use glob::glob;
-use log::{debug, warn};
 
 const MIDNIGHT: u64 = 60 * 60 * 24;
 

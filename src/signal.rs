@@ -1,9 +1,8 @@
-use std::io;
-use std::str::FromStr;
-
 use failure::{err_msg, Error};
 use libc;
 use serde_derive::{Deserialize, Serialize};
+use std::io;
+use std::str::FromStr;
 
 use crate::utils::cvt;
 

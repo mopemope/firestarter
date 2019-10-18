@@ -1,12 +1,3 @@
-use std::collections::HashMap;
-use std::ops::Sub;
-use std::os::unix::io::AsRawFd;
-use std::{io, thread, time};
-
-use chrono::{DateTime, Duration, Utc};
-use log::{debug, info, warn};
-use nix::unistd::getpid;
-
 use crate::config::{AckKind, RestartStrategy, RunUpgrader, WorkerConfig};
 use crate::logs::LogFile;
 use crate::monitor::{Monitor, OutputKind};
@@ -14,6 +5,13 @@ use crate::process::{
     output_stderr_log, output_stdout_log, process_exited, run_exec_stop, run_upgrader, Process,
 };
 use crate::signal::{Signal, SignalSend};
+use chrono::{DateTime, Duration, Utc};
+use log::{debug, info, warn};
+use nix::unistd::getpid;
+use std::collections::HashMap;
+use std::ops::Sub;
+use std::os::unix::io::AsRawFd;
+use std::{io, thread, time};
 
 // #[derive(Debug)]
 pub struct Worker<'a> {

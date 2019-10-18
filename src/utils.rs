@@ -1,11 +1,9 @@
-use std::path::PathBuf;
-use std::{env, io, time};
-
+use crate::app::get_app_name;
 use chrono::Duration;
 use libc;
 use log::warn;
-
-use crate::app::get_app_name;
+use std::path::PathBuf;
+use std::{env, io, time};
 
 pub trait IsMinusOne {
     fn is_minus_one(&self) -> bool;

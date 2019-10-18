@@ -1,15 +1,14 @@
+use failure::{err_msg, Error};
+use log::{debug, warn};
+use nix::unistd::getpid;
+use serde_derive::{Deserialize, Serialize};
+use serde_json;
 use std::io::{BufRead, BufReader, Write};
 use std::ops::Add;
 use std::os::unix::net::UnixStream;
 use std::str::FromStr;
 use std::string::ToString;
 use std::{io, path};
-
-use failure::{err_msg, Error};
-use log::{debug, warn};
-use nix::unistd::getpid;
-use serde_derive::{Deserialize, Serialize};
-use serde_json;
 
 use crate::signal::Signal;
 

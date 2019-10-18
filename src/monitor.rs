@@ -1,21 +1,3 @@
-use std::collections::HashMap;
-use std::io::{copy, Write};
-use std::os::unix::io::{FromRawFd, RawFd};
-use std::os::unix::net::UnixListener;
-use std::process::{exit, Child};
-use std::string::String;
-use std::{env, fs, io, path, thread, time};
-
-use failure::{err_msg, Error};
-use glob::glob;
-use libc;
-use log::{debug, error, info, trace, warn};
-use mio::unix::EventedFd;
-use mio::{Events, Poll, PollOpt, Ready, Token};
-use nix::sys::signal;
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{close, fork, getpid, ForkResult, Pid};
-
 use crate::app::{get_app_name, APP_NAME_UPPER};
 use crate::command::*;
 use crate::config::WorkerConfig;
@@ -25,6 +7,22 @@ use crate::signal::Signal;
 use crate::sock::ListenFd;
 use crate::utils::{format_duration, set_nonblock};
 use crate::worker::Worker;
+use failure::{err_msg, Error};
+use glob::glob;
+use libc;
+use log::{debug, error, info, trace, warn};
+use mio::unix::EventedFd;
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use nix::sys::signal;
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::unistd::{close, fork, getpid, ForkResult, Pid};
+use std::collections::HashMap;
+use std::io::{copy, Write};
+use std::os::unix::io::{FromRawFd, RawFd};
+use std::os::unix::net::UnixListener;
+use std::process::{exit, Child};
+use std::string::String;
+use std::{env, fs, io, path, thread, time};
 
 extern "C" fn handle_signal(signum: i32) {
     let s = signum as libc::c_int;

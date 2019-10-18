@@ -1,21 +1,7 @@
-use log::error;
-
-mod app;
-mod client;
-mod cmdline;
-mod command;
-mod config;
-mod daemon;
-mod logs;
-mod monitor;
-mod process;
-mod reloader;
-mod signal;
-mod sock;
-mod utils;
-mod worker;
+use firestarter::cmdline;
 
 fn main() {
+    use log::error;
     use nix::unistd::{getpid, getppid};
     use std::env;
     let want_bt = match env::var("RUST_BACKTRACE").as_ref().map(|x| x.as_str()) {
