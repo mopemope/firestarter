@@ -1,4 +1,4 @@
-use failure::{err_msg, Error};
+use anyhow::{Context, Error, Result};
 use lazy_static::lazy_static;
 use libc::close;
 use nix::sys::socket;
@@ -22,7 +22,7 @@ pub enum ListenFd {
 
 impl ListenFd {
     /// Creates a new listener from a string.
-    pub fn new_listener(s: &str) -> Result<ListenFd, Error> {
+    pub fn new_listener(s: &str) -> Result<ListenFd> {
         if let Ok(port) = s.parse() {
             Ok(ListenFd::TcpListener(SocketAddr::new(
                 Ipv4Addr::new(127, 0, 0, 1).into(),
@@ -33,16 +33,16 @@ impl ListenFd {
         } else if s.contains('/') {
             ListenFd::new_unix_listener(s)
         } else {
-            Err(err_msg(format!(
+            Err(anyhow::format_err!(
                 "unsupported specification '{}'. please provide \
                  an explicit socket type",
                 s
-            )))
+            ))
         }
     }
 
     /// Creates a new tcp listener from a string.
-    pub fn new_tcp_listener(s: &str) -> Result<ListenFd, Error> {
+    pub fn new_tcp_listener(s: &str) -> Result<ListenFd> {
         if let Ok(port) = s.parse() {
             Ok(ListenFd::TcpListener(SocketAddr::new(
                 Ipv4Addr::new(127, 0, 0, 1).into(),
@@ -54,12 +54,12 @@ impl ListenFd {
     }
 
     /// Creates a new unix listener from a string.
-    pub fn new_unix_listener(s: &str) -> Result<ListenFd, Error> {
+    pub fn new_unix_listener(s: &str) -> Result<ListenFd> {
         Ok(ListenFd::UnixListener(PathBuf::from(s)))
     }
 
     /// Creates a new udp socket from a string.
-    pub fn new_udp_socket(s: &str) -> Result<ListenFd, Error> {
+    pub fn new_udp_socket(s: &str) -> Result<ListenFd> {
         if let Ok(port) = s.parse() {
             Ok(ListenFd::UdpSocket(SocketAddr::new(
                 Ipv4Addr::new(127, 0, 0, 1).into(),
@@ -79,11 +79,11 @@ impl ListenFd {
     }
 
     /// Creates a raw fd from the fd spec.
-    pub fn create_raw_fd(&self, backlog: usize) -> Result<RawFd, Error> {
+    pub fn create_raw_fd(&self, backlog: usize) -> Result<RawFd> {
         create_raw_fd(self, backlog)
     }
 
-    pub fn describe_raw_fd(&self, raw_fd: RawFd) -> Result<String, Error> {
+    pub fn describe_raw_fd(&self, raw_fd: RawFd) -> Result<String> {
         let addr = describe_addr(raw_fd)?;
         Ok(match self {
             ListenFd::TcpListener(..) => format!("{} fd:{} (tcp listener)", addr, raw_fd),
@@ -99,8 +99,8 @@ impl FromStr for ListenFd {
     fn from_str(s: &str) -> Result<ListenFd, Error> {
         let (ty, val) = if let Some(caps) = SPLIT_PREFIX.captures(s) {
             (
-                Some(caps.get(1).unwrap().as_str()),
-                caps.get(2).unwrap().as_str(),
+                Some(caps.get(1).context("failed get capture")?.as_str()),
+                caps.get(2).context("failed get capture")?.as_str(),
             )
         } else {
             (None, s)
@@ -110,13 +110,13 @@ impl FromStr for ListenFd {
             Some("tcp") => ListenFd::new_tcp_listener(val),
             Some("unix") => ListenFd::new_unix_listener(val),
             Some("udp") => ListenFd::new_udp_socket(val),
-            Some(ty) => Err(err_msg(format!("unknown socket type '{}'", ty))),
+            Some(ty) => Err(anyhow::format_err!("unknown socket type '{}'", ty)),
             None => ListenFd::new_listener(val),
         }
     }
 }
 
-pub fn create_raw_fd(fd: &ListenFd, backlog: usize) -> Result<RawFd, Error> {
+pub fn create_raw_fd(fd: &ListenFd, backlog: usize) -> Result<RawFd> {
     let (addr, fam, ty) = sock_info(fd)?;
     let sock = socket::socket(fam, ty, socket::SockFlag::empty(), None)?;
     socket::setsockopt(sock, socket::sockopt::ReuseAddr, &true)?;
@@ -134,13 +134,11 @@ pub fn create_raw_fd(fd: &ListenFd, backlog: usize) -> Result<RawFd, Error> {
     rv.map(|_| sock)
 }
 
-pub fn describe_addr(raw_fd: RawFd) -> Result<impl Display, Error> {
+pub fn describe_addr(raw_fd: RawFd) -> Result<impl Display> {
     Ok(socket::getsockname(raw_fd)?)
 }
 
-fn sock_info(
-    fd: &ListenFd,
-) -> Result<(socket::SockAddr, socket::AddressFamily, socket::SockType), Error> {
+fn sock_info(fd: &ListenFd) -> Result<(socket::SockAddr, socket::AddressFamily, socket::SockType)> {
     Ok(match fd {
         ListenFd::TcpListener(addr) => (
             socket::SockAddr::new_inet(socket::InetAddr::from_std(addr)),

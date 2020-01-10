@@ -5,6 +5,7 @@ use crate::process::{
     output_stderr_log, output_stdout_log, process_exited, run_exec_stop, run_upgrader, Process,
 };
 use crate::signal::{Signal, SignalSend};
+use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use log::{debug, info, warn};
 use nix::unistd::getpid;
@@ -53,13 +54,13 @@ impl<'a> Worker<'a> {
         self.extra_env.push(format!("{}={}", k, v));
     }
 
-    fn get_log_writer(s: &str) -> io::Result<Box<dyn io::Write>> {
+    fn get_log_writer(s: &str) -> Result<Box<dyn io::Write>> {
         let mut log: LogFile = s.parse().unwrap();
         log.open()?;
         Ok(Box::new(log))
     }
 
-    pub fn run(&mut self, monitor: &mut Monitor) -> io::Result<Vec<u32>> {
+    pub fn run(&mut self, monitor: &mut Monitor) -> Result<Vec<u32>> {
         let pid = getpid();
         debug!(
             "prepare [{}] worker. created [{}] pid [{}]",
@@ -98,7 +99,7 @@ impl<'a> Worker<'a> {
         Ok(res)
     }
 
-    pub fn inc(&mut self, monitor: &mut Monitor) -> io::Result<u32> {
+    pub fn inc(&mut self, monitor: &mut Monitor) -> Result<u32> {
         let pid = getpid();
         info!("inc [{}] worker. pid [{}]", self.name, pid);
         self.num_processes += 1;
@@ -106,7 +107,7 @@ impl<'a> Worker<'a> {
         self.run_process(monitor)
     }
 
-    pub fn dec(&mut self, signal: Signal) -> io::Result<u32> {
+    pub fn dec(&mut self, signal: Signal) -> Result<u32> {
         let pid = getpid();
         if self.num_processes > 1 {
             info!("dec [{}] worker. pid [{}]", self.name, pid);
@@ -118,7 +119,7 @@ impl<'a> Worker<'a> {
         }
     }
 
-    pub fn run_process(&mut self, monitor: &mut Monitor) -> io::Result<u32> {
+    pub fn run_process(&mut self, monitor: &mut Monitor) -> Result<u32> {
         match self.spawn_process() {
             Ok(mut p) => {
                 if let Some(ref mut child) = p.child() {
@@ -145,7 +146,7 @@ impl<'a> Worker<'a> {
         restarter: RestartStrategy,
         p: &mut Process,
         respawn: &mut usize,
-    ) -> (bool) {
+    ) -> bool {
         p.try_wait()
             .map(|exit_code| {
                 info!(
@@ -200,7 +201,7 @@ impl<'a> Worker<'a> {
         self.config.start_immediate
     }
 
-    fn spawn_process(&mut self) -> io::Result<Process<'a>> {
+    fn spawn_process(&mut self) -> Result<Process<'a>> {
         self.id += 1;
         let mut penv: HashMap<String, String> = HashMap::new();
         for env in &self.config.environments {
@@ -220,10 +221,7 @@ impl<'a> Worker<'a> {
             }
         }
         if self.config.exec_start_cmd.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "fail command not found",
-            ));
+            return Err(anyhow::format_err!("fail command not found"));
         }
         let mut p = Process::new(
             self.id,
@@ -236,7 +234,7 @@ impl<'a> Worker<'a> {
         Ok(p)
     }
 
-    pub fn signal_one_process(&mut self, signal: Signal) -> io::Result<u32> {
+    pub fn signal_one_process(&mut self, signal: Signal) -> Result<u32> {
         let mut ret = 0;
         if let Some(mut p) = self.processes.pop() {
             if let Some(pid) = p.pid() {
@@ -264,7 +262,7 @@ impl<'a> Worker<'a> {
         }
     }
 
-    pub fn kill(&mut self) -> io::Result<Vec<u32>> {
+    pub fn kill(&mut self) -> Result<Vec<u32>> {
         debug!("kill worker processes {}", self.processes.len());
         let mut res = Vec::new();
         while let Some(ref mut p) = self.processes.pop() {
@@ -277,7 +275,7 @@ impl<'a> Worker<'a> {
         Ok(res)
     }
 
-    pub fn signal_all(&mut self, sig: Signal) -> io::Result<Vec<u32>> {
+    pub fn signal_all(&mut self, sig: Signal) -> Result<Vec<u32>> {
         let mut pids: Vec<u32> = Vec::new();
         for p in &mut self.processes {
             let pid = p.pid().unwrap();
@@ -296,7 +294,7 @@ impl<'a> Worker<'a> {
         Ok(pids)
     }
 
-    pub fn signal_and_wait(&mut self, sig: Signal) -> io::Result<Vec<u32>> {
+    pub fn signal_and_wait(&mut self, sig: Signal) -> Result<Vec<u32>> {
         let mut pids: Vec<u32> = Vec::new();
         while let Some(ref mut p) = self.processes.pop() {
             let pid = p.pid().unwrap();
@@ -316,7 +314,7 @@ impl<'a> Worker<'a> {
         Ok(pids)
     }
 
-    pub fn cleanup_process(&mut self, p: &mut Process) -> io::Result<()> {
+    pub fn cleanup_process(&mut self, p: &mut Process) -> Result<()> {
         if let Some(ref mut p) = p.child() {
             if let Some(ref mut writer) = self.stdout_log {
                 output_stdout_log(p, writer)?;
@@ -341,7 +339,7 @@ impl<'a> Worker<'a> {
         old_processes
     }
 
-    fn spawn_upgrade_processes(&mut self, monitor: &mut Monitor) -> io::Result<Vec<u32>> {
+    fn spawn_upgrade_processes(&mut self, monitor: &mut Monitor) -> Result<Vec<u32>> {
         let self_pid = getpid();
         let mut new = Vec::new();
         let num: usize = self.num_processes as usize;
@@ -360,7 +358,7 @@ impl<'a> Worker<'a> {
         &mut self,
         monitor: &mut Monitor,
         signal: Signal,
-    ) -> io::Result<(Vec<u32>, Vec<u32>)> {
+    ) -> Result<(Vec<u32>, Vec<u32>)> {
         let mut old = Vec::new();
         let self_pid = getpid();
         let mut old_processes = self.move_old_process();
@@ -419,7 +417,7 @@ impl<'a> Worker<'a> {
         &mut self,
         monitor: &mut Monitor,
         signal: Signal,
-    ) -> io::Result<(Vec<u32>, Vec<u32>)> {
+    ) -> Result<(Vec<u32>, Vec<u32>)> {
         let mut old = Vec::new();
         let self_pid = getpid();
         let mut old_processes = self.move_old_process();
@@ -469,7 +467,7 @@ impl<'a> Worker<'a> {
         &mut self,
         monitor: &mut Monitor,
         signal: Signal,
-    ) -> io::Result<(Vec<u32>, Vec<u32>)> {
+    ) -> Result<(Vec<u32>, Vec<u32>)> {
         let self_pid = getpid();
         info!(
             "upgrading. wait ack [{:?}] [{}] worker. pid [{}]",
@@ -494,7 +492,7 @@ impl<'a> Worker<'a> {
         &mut self,
         monitor: &mut Monitor,
         signal: Signal,
-    ) -> io::Result<(Vec<u32>, Vec<u32>)> {
+    ) -> Result<(Vec<u32>, Vec<u32>)> {
         let self_pid = getpid();
         info!("start upgrade [{}] worker. pid [{}]", self.name, self_pid);
         if !self.active {
@@ -511,10 +509,7 @@ impl<'a> Worker<'a> {
             if let Some(ref _upgrader) = self.config.upgrader {
                 let mut proc = run_upgrader(&self.config.upgrader_cmd)?;
                 if !monitor.wait_on_upgrader(self, &mut proc)? {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "upgrade process terminated abnormally",
-                    ));
+                    return Err(anyhow::format_err!("upgrade process terminated abnormally"));
                 }
             }
         }
@@ -557,11 +552,7 @@ impl<'a> Worker<'a> {
         }
     }
 
-    pub fn stop_processes(
-        &mut self,
-        monitor: &mut Monitor,
-        signal: Signal,
-    ) -> io::Result<Vec<u32>> {
+    pub fn stop_processes(&mut self, monitor: &mut Monitor, signal: Signal) -> Result<Vec<u32>> {
         let mut old_pid = Vec::new();
         if self.processes.is_empty() {
             return Ok(old_pid);
@@ -606,7 +597,7 @@ impl<'a> Worker<'a> {
         &mut self,
         monitor: &mut Monitor,
         signal: Signal,
-    ) -> io::Result<(Vec<u32>, Vec<u32>)> {
+    ) -> Result<(Vec<u32>, Vec<u32>)> {
         let self_pid = getpid();
         info!("start restart [{}] worker. pid [{}]", self.name, self_pid);
         if !self.active {

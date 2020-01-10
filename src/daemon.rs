@@ -4,7 +4,7 @@ use crate::monitor::{ExitStatus, MonitorProcess};
 use crate::process::{process_normally_exited, process_output, run_upgrader};
 use crate::reloader;
 use crate::sock::ListenFd;
-use failure::{err_msg, Error};
+use anyhow::{Context, Result};
 use libc::pid_t;
 use log::{debug, error, info, warn};
 use mio::unix::EventedFd;
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::{fs, io, path, thread, time};
+use std::{fs, path, thread, time};
 
 extern "C" fn handle_signal(_signum: i32) {}
 
@@ -29,31 +29,31 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config) -> Result<Self> {
         let sa = SigAction::new(
             SigHandler::Handler(handle_signal),
             SaFlags::empty(),
             SigSet::empty(),
         );
         unsafe {
-            sigaction(signal::SIGINT, &sa).unwrap();
-            sigaction(signal::SIGQUIT, &sa).unwrap();
+            sigaction(signal::SIGINT, &sa).context("failed set sigaction")?;
+            sigaction(signal::SIGQUIT, &sa).context("failed set sigaction")?;
         }
 
         let pid = getpid();
-        Daemon {
+        Ok(Daemon {
             config,
             monitors: HashMap::new(),
             pid,
-        }
+        })
     }
 
     fn is_daemon_process(&self) -> bool {
         self.pid == getpid()
     }
 
-    fn listen_ctrl_sock(path: &str) -> Result<UnixListener, Error> {
-        let listen_fd: ListenFd = path.parse().unwrap();
+    fn listen_ctrl_sock(path: &str) -> Result<UnixListener> {
+        let listen_fd: ListenFd = path.parse().context("failed parse path")?;
         let pid = getpid();
         match listen_fd {
             ListenFd::UnixListener(_) => {
@@ -66,19 +66,15 @@ impl Daemon {
                 let listener: UnixListener = unsafe { UnixListener::from_raw_fd(raw_fd) };
                 Ok(listener)
             }
-            _ => Err(err_msg(format!("{:?} not support", listen_fd))),
+            _ => Err(anyhow::format_err!("{:?} not support", listen_fd)),
         }
     }
 
-    fn send_command_worker(
-        &mut self,
-        cmd: DaemonCommand,
-        stream: &mut UnixStream,
-    ) -> io::Result<()> {
+    fn send_command_worker(&mut self, cmd: DaemonCommand, stream: &mut UnixStream) -> Result<()> {
         if let Some(name) = cmd.worker {
             if let Some(config) = self.config.workers.get(&name) {
                 let sock_path = config.control_sock(&name);
-                let res = send_ctrl_command(&sock_path, &cmd.command.unwrap())?;
+                let res = send_ctrl_command(&sock_path, &cmd.command.context("failed command")?)?;
                 let buf = serde_json::to_string(&res)?;
                 stream.write_all(buf.as_bytes())?;
                 stream.write_all(b"\n")?;
@@ -88,12 +84,8 @@ impl Daemon {
         Ok(())
     }
 
-    fn send_command_workers(
-        &mut self,
-        cmd: DaemonCommand,
-        stream: &mut UnixStream,
-    ) -> io::Result<()> {
-        let cmd = &cmd.command.unwrap();
+    fn send_command_workers(&mut self, cmd: DaemonCommand, stream: &mut UnixStream) -> Result<()> {
+        let cmd = &cmd.command.context("failed command")?;
         let mut v = Vec::new();
         for (name, config) in &self.config.workers {
             let sock_path = config.control_sock(name);
@@ -107,7 +99,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn check_upgrade(&mut self) -> io::Result<()> {
+    fn check_upgrade(&mut self) -> Result<()> {
         for (name, monitor) in &mut self.monitors {
             let config = &self.config.workers[name];
             if let Some(timeout) = config.upgrader_active_sec {
@@ -126,7 +118,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn check_cmd_modified(&mut self) -> io::Result<()> {
+    fn check_cmd_modified(&mut self) -> Result<()> {
         let pid = getpid();
         for (name, monitor) in &mut self.monitors {
             let config = &self.config.workers[name];
@@ -156,9 +148,9 @@ impl Daemon {
         Ok(())
     }
 
-    pub fn wait(&mut self, listener: &UnixListener) -> io::Result<()> {
+    pub fn wait(&mut self, listener: &UnixListener) -> Result<()> {
         let timeout = time::Duration::from_secs(1);
-        let poll = Poll::new().unwrap();
+        let poll = Poll::new().context("failed create Poll")?;
         let ctrl_fd: RawFd = listener.as_raw_fd();
         let listen_token = Token(1);
         poll.register(
@@ -229,7 +221,7 @@ impl Daemon {
         }
     }
 
-    fn check_upgrader_process(&mut self) -> io::Result<()> {
+    fn check_upgrader_process(&mut self) -> Result<()> {
         let mut need_clean = Vec::new();
         for (name, monitor) in &mut self.monitors {
             if let Some(ref mut p) = monitor.upgrade_process {
@@ -322,14 +314,14 @@ impl Daemon {
         restart_keys
     }
 
-    fn check_monitor_processes(&mut self) -> Result<(), Error> {
+    fn check_monitor_processes(&mut self) -> Result<()> {
         let timeout = time::Duration::from_millis(500);
         let restarts = self.check_monitors();
         for name in &restarts {
             if let Some(config) = self.config.workers.get(name) {
                 info!("wait respawn monitor process [{}]", name);
                 thread::sleep(timeout);
-                let mut monitor = MonitorProcess::new(name, config);
+                let mut monitor = MonitorProcess::new(name, config)?;
                 if monitor.spawn(name, config)? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
@@ -362,11 +354,11 @@ impl Daemon {
         }
     }
 
-    pub fn run(&mut self) -> Result<(), Error> {
+    pub fn run(&mut self) -> Result<()> {
         info!("start daemon. pid [{}]", self.pid);
         for (name, config) in &mut self.config.workers {
             if !self.monitors.contains_key(name) {
-                let mut monitor = MonitorProcess::new(name, config);
+                let mut monitor = MonitorProcess::new(name, config)?;
                 if monitor.spawn(name, config)? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
@@ -382,7 +374,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn send_list(&mut self, stream: &mut UnixStream) -> io::Result<()> {
+    fn send_list(&mut self, stream: &mut UnixStream) -> Result<()> {
         let pid = pid_t::from(getpid());
         let mut v: Vec<String> = Vec::new();
         for name in self.config.workers.keys() {

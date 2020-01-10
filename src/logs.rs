@@ -1,5 +1,5 @@
+use anyhow::{Error, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
-use failure::{err_msg, Error};
 use glob::glob;
 use log::{debug, warn};
 use std::ffi::OsStr;
@@ -321,7 +321,7 @@ impl FromStr for LogFile {
                 let log = LogFile::new(PathBuf::from(path), Box::new(policy));
                 Ok(log)
             }
-            _ => Err(err_msg("unknown log type")),
+            _ => Err(anyhow::format_err!("unknown log type")),
         }
     }
 }

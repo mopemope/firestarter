@@ -2,8 +2,8 @@ use crate::app::{get_app_name, APP_NAME};
 use crate::client::Client;
 use crate::config::parse_config;
 use crate::daemon::Daemon;
+use anyhow::{Context, Result};
 use clap::{App, AppSettings, Arg, SubCommand};
-use failure::Error;
 use lazy_static::lazy_static;
 use std::{env, path};
 
@@ -15,9 +15,9 @@ lazy_static! {
     };
 }
 
-fn make_app() -> App<'static, 'static> {
-    let sock_path = SOCK_PATH.to_str().unwrap();
-    App::new(APP_NAME)
+fn make_app() -> Result<App<'static, 'static>> {
+    let sock_path = SOCK_PATH.to_str().context("failed get sock path")?;
+    let app = App::new(APP_NAME)
         .version(env!("CARGO_PKG_VERSION"))
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .about("A process and shared socket manager")
@@ -118,11 +118,12 @@ fn make_app() -> App<'static, 'static> {
                         .value_name("COMMAND")
                         .help("set send command."),
                 ),
-        )
+        );
+    Ok(app)
 }
 
-pub fn execute() -> Result<(), Error> {
-    let app = make_app();
+pub fn execute() -> Result<()> {
+    let app = make_app()?;
     let matches = app.get_matches();
 
     match matches.subcommand() {
@@ -133,7 +134,7 @@ pub fn execute() -> Result<(), Error> {
             let path = m.value_of("config").expect("require config path");
             let mut config = { parse_config(path)? };
             config.control_sock = sock_path.to_owned();
-            Daemon::new(config).run()
+            Daemon::new(config)?.run()
         }
         ("list", Some(m)) => {
             let sock_path = m
