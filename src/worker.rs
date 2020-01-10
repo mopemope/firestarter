@@ -5,7 +5,8 @@ use crate::process::{
     output_stderr_log, output_stdout_log, process_exited, run_exec_stop, run_upgrader, Process,
 };
 use crate::signal::{Signal, SignalSend};
-use anyhow::Result;
+use anyhow::{Context, Result};
+use async_std::io::prelude::*;
 use chrono::{DateTime, Duration, Utc};
 use log::{debug, info, warn};
 use nix::unistd::getpid;
@@ -20,8 +21,8 @@ pub struct Worker<'a> {
     pub name: &'a str,
     pub config: &'a WorkerConfig,
     pub processes: Vec<Process<'a>>,
-    pub stdout_log: Option<Box<dyn io::Write>>,
-    pub stderr_log: Option<Box<dyn io::Write>>,
+    pub stdout_log: Option<LogFile>,
+    pub stderr_log: Option<LogFile>,
     pub active: bool,
     pub num_processes: u64,
     extra_env: Vec<String>,
@@ -54,13 +55,13 @@ impl<'a> Worker<'a> {
         self.extra_env.push(format!("{}={}", k, v));
     }
 
-    fn get_log_writer(s: &str) -> Result<Box<dyn io::Write>> {
-        let mut log: LogFile = s.parse().unwrap();
-        log.open()?;
-        Ok(Box::new(log))
+    async fn get_log_writer(s: &str) -> Result<LogFile> {
+        let mut log: LogFile = s.parse().context("failed parse log")?;
+        log.open().await?;
+        Ok(log)
     }
 
-    pub fn run(&mut self, monitor: &mut Monitor) -> Result<Vec<u32>> {
+    pub async fn run(&mut self, monitor: &mut Monitor) -> Result<Vec<u32>> {
         let pid = getpid();
         debug!(
             "prepare [{}] worker. created [{}] pid [{}]",
@@ -69,14 +70,14 @@ impl<'a> Worker<'a> {
         let mut res = Vec::new();
         if self.stdout_log.is_none() {
             if let Some(ref s) = self.config.stdout_log {
-                let w = Worker::get_log_writer(s)?;
+                let w = Worker::get_log_writer(s).await?;
                 self.stdout_log = Some(w);
             }
         }
 
         if self.stderr_log.is_none() {
             if let Some(ref s) = self.config.stderr_log {
-                let w = Worker::get_log_writer(s)?;
+                let w = Worker::get_log_writer(s).await?;
                 self.stderr_log = Some(w);
             }
         }

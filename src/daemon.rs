@@ -148,7 +148,7 @@ impl Daemon {
         Ok(())
     }
 
-    pub fn wait(&mut self, listener: &UnixListener) -> Result<()> {
+    pub async fn wait(&mut self, listener: &UnixListener) -> Result<()> {
         let timeout = time::Duration::from_secs(1);
         let poll = Poll::new().context("failed create Poll")?;
         let ctrl_fd: RawFd = listener.as_raw_fd();
@@ -201,7 +201,7 @@ impl Daemon {
                     if let Err(e) = self.check_upgrader_process() {
                         warn!("fail check upgrader process. caused by: {}", e);
                     }
-                    if let Err(e) = self.check_monitor_processes() {
+                    if let Err(e) = self.check_monitor_processes().await {
                         warn!("fail check monitor process. caused by: {}", e);
                     }
                     now = time::SystemTime::now();
@@ -314,7 +314,7 @@ impl Daemon {
         restart_keys
     }
 
-    fn check_monitor_processes(&mut self) -> Result<()> {
+    async fn check_monitor_processes(&mut self) -> Result<()> {
         let timeout = time::Duration::from_millis(500);
         let restarts = self.check_monitors();
         for name in &restarts {
@@ -322,7 +322,7 @@ impl Daemon {
                 info!("wait respawn monitor process [{}]", name);
                 thread::sleep(timeout);
                 let mut monitor = MonitorProcess::new(name, config)?;
-                if monitor.spawn(name, config)? {
+                if monitor.spawn(name, config).await? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
             }
@@ -338,28 +338,28 @@ impl Daemon {
         }
     }
 
-    fn clean_process(&mut self) {
+    async fn clean_process(&mut self) {
         for mon in self.monitors.values_mut() {
             if let Err(_e) = mon.kill_all() {}
         }
-        if let Err(e) = self.check_monitor_processes() {
+        if let Err(e) = self.check_monitor_processes().await {
             error!("fail spwan monitor process. caused by: {}", e);
         }
         let delay = time::Duration::from_millis(500);
         while !self.monitors.is_empty() {
-            if let Err(e) = self.check_monitor_processes() {
+            if let Err(e) = self.check_monitor_processes().await {
                 error!("fail spwan monitor process. caused by: {}", e);
             }
             thread::sleep(delay);
         }
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         info!("start daemon. pid [{}]", self.pid);
         for (name, config) in &mut self.config.workers {
             if !self.monitors.contains_key(name) {
                 let mut monitor = MonitorProcess::new(name, config)?;
-                if monitor.spawn(name, config)? {
+                if monitor.spawn(name, config).await? {
                     self.monitors.insert(name.to_owned(), monitor);
                 }
             }
@@ -368,7 +368,7 @@ impl Daemon {
         if self.is_daemon_process() {
             let listener = Daemon::listen_ctrl_sock(&self.config.control_sock)?;
             if !self.monitors.is_empty() {
-                self.wait(&listener)?
+                self.wait(&listener).await?
             }
         }
         Ok(())

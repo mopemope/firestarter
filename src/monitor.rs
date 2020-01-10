@@ -245,19 +245,21 @@ impl MonitorProcess {
         }
     }
 
-    pub fn spawn(&mut self, name: &str, config: &WorkerConfig) -> Result<bool> {
+    pub async fn spawn(&mut self, name: &str, config: &WorkerConfig) -> Result<bool> {
         let key = config.environment_base_name.to_owned();
-        match fork().expect("failed fork") {
+        match fork().context("failed fork")? {
             ForkResult::Parent { child } => {
                 // parent
                 self.pid = Some(child);
                 Ok(true)
             }
             ForkResult::Child => {
+                let config = config.clone();
+                let name = name.to_owned();
                 let pid = getpid();
                 self.pid = Some(pid);
-                let mut worker = Worker::new(name, config);
-                if let Err(e) = self.start_monitoring(&key, &mut worker, config) {
+                let mut worker = Worker::new(&name, &config);
+                if let Err(e) = self.start_monitoring(&key, &mut worker, &config).await {
                     warn!("exited monitor. caused by: {} pid: [{}]", e, pid);
                     return Err(e);
                 }
@@ -266,10 +268,10 @@ impl MonitorProcess {
         }
     }
 
-    fn start_monitoring(
+    async fn start_monitoring(
         &mut self,
         key: &str,
-        worker: &mut Worker,
+        worker: &mut Worker<'_>,
         config: &WorkerConfig,
     ) -> Result<bool> {
         let sa = signal::SigAction::new(
@@ -327,7 +329,7 @@ impl MonitorProcess {
         monitor.watch_ctrl_fd(ctrl_fd)?;
         // 5. spawn worker
         if fds.is_empty() || worker.start_immediate() {
-            worker.run(&mut monitor)?;
+            worker.run(&mut monitor).await?;
         } else {
             // watch_fd
             for fd in fds {
@@ -459,7 +461,7 @@ impl Monitor {
         Ok(())
     }
 
-    fn exec_command(
+    async fn exec_command(
         &mut self,
         command: &Command,
         signal: Option<Signal>,
@@ -480,7 +482,7 @@ impl Monitor {
                 }
             }
             Command::Start => {
-                let pids = worker.run(self)?;
+                let pids = worker.run(self).await?;
                 CommandResponse {
                     status: Status::Ok,
                     command: command.clone(),
@@ -585,14 +587,18 @@ impl Monitor {
         Ok(res)
     }
 
-    fn send_ctrl_command(&mut self, cmd: &CtrlCommand, worker: &mut Worker) -> CommandResponse {
+    async fn send_ctrl_command(
+        &mut self,
+        cmd: &CtrlCommand,
+        worker: &mut Worker,
+    ) -> CommandResponse {
         let CtrlCommand {
             ref command,
             signal,
             ..
         } = cmd;
 
-        match self.exec_command(command, *signal, worker) {
+        match self.exec_command(command, *signal, worker).await {
             Ok(res) => res,
             Err(e) => {
                 error!("fail exec command. caused by: {} pid [{}]", e, self.pid);
@@ -607,7 +613,7 @@ impl Monitor {
         }
     }
 
-    fn wait_activate_socket(&mut self, worker: &mut Worker) -> Result<()> {
+    async fn wait_activate_socket(&mut self, worker: &mut Worker) -> Result<()> {
         // activate
         let mut events = Events::with_capacity(8);
         while !worker.active {
@@ -622,7 +628,7 @@ impl Monitor {
                     self.poll.deregister(&EventedFd(&fd))?;
                     // spawn
                     if !worker.active {
-                        worker.run(self)?;
+                        worker.run(self).await?;
                     }
                 }
                 if let Err(e) = self.process_ctrl_event(worker, token) {

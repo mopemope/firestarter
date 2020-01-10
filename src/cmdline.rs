@@ -3,6 +3,7 @@ use crate::client::Client;
 use crate::config::parse_config;
 use crate::daemon::Daemon;
 use anyhow::{Context, Result};
+use async_std::task;
 use clap::{App, AppSettings, Arg, SubCommand};
 use lazy_static::lazy_static;
 use std::{env, path};
@@ -134,7 +135,7 @@ pub fn execute() -> Result<()> {
             let path = m.value_of("config").expect("require config path");
             let mut config = { parse_config(path)? };
             config.control_sock = sock_path.to_owned();
-            Daemon::new(config)?.run()
+            task::block_on(Daemon::new(config)?.run())
         }
         ("list", Some(m)) => {
             let sock_path = m
