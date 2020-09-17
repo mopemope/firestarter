@@ -20,8 +20,8 @@ pub struct Worker<'a> {
     pub name: &'a str,
     pub config: &'a WorkerConfig,
     pub processes: Vec<Process<'a>>,
-    pub stdout_log: Option<Box<io::Write>>,
-    pub stderr_log: Option<Box<io::Write>>,
+    pub stdout_log: Option<Box<dyn io::Write>>,
+    pub stderr_log: Option<Box<dyn io::Write>>,
     pub active: bool,
     pub num_processes: u64,
     extra_env: Vec<String>,
@@ -54,7 +54,7 @@ impl<'a> Worker<'a> {
         self.extra_env.push(format!("{}={}", k, v));
     }
 
-    fn get_log_writer(s: &str) -> io::Result<Box<io::Write>> {
+    fn get_log_writer(s: &str) -> io::Result<Box<dyn io::Write>> {
         let mut log: LogFile = s.parse().unwrap();
         log.open()?;
         Ok(Box::new(log))
@@ -146,7 +146,7 @@ impl<'a> Worker<'a> {
         restarter: RestartStrategy,
         p: &mut Process,
         respawn: &mut usize,
-    ) -> (bool) {
+    ) -> bool {
         p.try_wait()
             .map(|exit_code| {
                 info!(

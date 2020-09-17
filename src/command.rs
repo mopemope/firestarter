@@ -187,7 +187,7 @@ pub fn send_ctrl_command(sock_path: &str, cmd: &CtrlCommand) -> io::Result<Comma
     }
 }
 
-pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> io::Result<Box<ToString>> {
+pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> io::Result<Box<dyn ToString>> {
     if !path::Path::new(sock_path).exists() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -222,7 +222,7 @@ pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> io::Result<B
 pub fn send_daemon_list_command(
     sock_path: &str,
     cmd: &DaemonCommand,
-) -> io::Result<Vec<Box<ToString>>> {
+) -> io::Result<Vec<Box<dyn ToString>>> {
     if !path::Path::new(sock_path).exists() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -247,7 +247,7 @@ pub fn send_daemon_list_command(
     let _len = reader.read_line(&mut line)?;
     debug!("received response {}. pid [{}]", line, pid);
     let response: Vec<CommandResponse> = serde_json::from_str(&line)?;
-    let mut result: Vec<Box<ToString>> = Vec::new();
+    let mut result: Vec<Box<dyn ToString>> = Vec::new();
     for res in response {
         result.push(Box::new(res));
     }

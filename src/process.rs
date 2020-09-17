@@ -362,7 +362,7 @@ pub fn process_output(p: &mut Child) {
     }
 }
 
-pub fn output_stdout_log(p: &mut Child, writer: &mut io::Write) -> io::Result<()> {
+pub fn output_stdout_log(p: &mut Child, writer: &mut dyn io::Write) -> io::Result<()> {
     let retry = if let Some(ref mut reader) = p.stdout {
         match copy(reader, writer) {
             Ok(_size) => {
@@ -390,7 +390,7 @@ pub fn output_stdout_log(p: &mut Child, writer: &mut io::Write) -> io::Result<()
     Ok(())
 }
 
-pub fn output_stderr_log(p: &mut Child, writer: &mut io::Write) -> io::Result<()> {
+pub fn output_stderr_log(p: &mut Child, writer: &mut dyn io::Write) -> io::Result<()> {
     let retry = if let Some(ref mut reader) = p.stderr {
         match copy(reader, writer) {
             Ok(_size) => {
