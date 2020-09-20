@@ -2,6 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/firestarter.svg)](https://crates.io/crates/firestarter)
 [![Patreon](https://img.shields.io/badge/patreon-become%20a%20patron-red.svg)](https://www.patreon.com/mopemope)
+[![Build Status](https://travis-ci.org/palfrey/firestarter.svg?branch=master)](https://travis-ci.org/palfrey/firestarter)
 
 Firestarter is simple process and shared socket manager, it designed like [circus][] and [einhorn][], it works with lightweight and faster.
 
