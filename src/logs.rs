@@ -1,3 +1,7 @@
+use anyhow::{Error, Result};
+use chrono::{DateTime, Local, Timelike, Utc};
+use glob::glob;
+use log::{debug, warn};
 use std::ffi::OsStr;
 use std::fs::{remove_file, rename, File, OpenOptions};
 use std::io;
@@ -5,10 +9,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
-
-use chrono::{DateTime, Local, Timelike, Utc};
-use failure::{err_msg, Error};
-use glob::glob;
 
 const MIDNIGHT: u64 = 60 * 60 * 24;
 
@@ -220,11 +220,11 @@ impl RotatePolicy for TimedRotatePolicy {
 pub struct LogFile {
     inner: Option<File>,
     log_file: PathBuf,
-    policy: Box<RotatePolicy>,
+    policy: Box<dyn RotatePolicy>,
 }
 
 impl LogFile {
-    pub fn new(log_file: PathBuf, policy: Box<RotatePolicy>) -> Self {
+    pub fn new(log_file: PathBuf, policy: Box<dyn RotatePolicy>) -> Self {
         LogFile {
             inner: None,
             log_file,
@@ -321,7 +321,7 @@ impl FromStr for LogFile {
                 let log = LogFile::new(PathBuf::from(path), Box::new(policy));
                 Ok(log)
             }
-            _ => Err(err_msg("unknown log type")),
+            _ => Err(anyhow::format_err!("unknown log type")),
         }
     }
 }
