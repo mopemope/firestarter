@@ -1,9 +1,9 @@
-use failure::Error;
-use libc::pid_t;
-use nix::unistd::getpid;
-
 use crate::command::*;
 use crate::signal::Signal;
+use anyhow::{Context, Result};
+use libc::pid_t;
+use log::info;
+use nix::unistd::getpid;
 
 pub struct Client {}
 
@@ -12,17 +12,17 @@ impl Client {
         Client {}
     }
 
-    pub fn list(&mut self, sock_path: &str) -> Result<(), Error> {
+    pub fn list(&mut self, sock_path: &str) -> Result<()> {
         info!("show worker names");
         self.send_list(sock_path)
     }
 
-    pub fn status(&mut self, sock_path: &str) -> Result<(), Error> {
+    pub fn status(&mut self, sock_path: &str) -> Result<()> {
         info!("show worker status");
         self.send_status(sock_path)
     }
 
-    pub fn stop(&mut self, sock_path: &str) -> Result<(), Error> {
+    pub fn stop(&mut self, sock_path: &str) -> Result<()> {
         info!("stop daemon");
         self.send_stop(sock_path)
     }
@@ -33,7 +33,7 @@ impl Client {
         name: &str,
         command: &str,
         signal: Option<&str>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         info!("start client. [{}] [{}]", name, command);
         self.send_ctrl_command(sock_path, name, command, signal)
     }
@@ -44,9 +44,9 @@ impl Client {
         name: &str,
         command: &str,
         signal: Option<&str>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let signal: Option<Signal> = signal.map(|signal| signal.parse().unwrap());
-        let cmd: Command = command.parse().unwrap();
+        let cmd: Command = command.parse().context("failed parse command")?;
         let pid = pid_t::from(getpid());
         let ctrl_cmd = CtrlCommand {
             command: cmd,
@@ -65,7 +65,7 @@ impl Client {
         Ok(())
     }
 
-    fn send_list(&self, sock_path: &str) -> Result<(), Error> {
+    fn send_list(&self, sock_path: &str) -> Result<()> {
         let pid = pid_t::from(getpid());
         let dcmd = DaemonCommand {
             command_type: CommandType::List,
@@ -79,7 +79,7 @@ impl Client {
         Ok(())
     }
 
-    fn send_status(&self, sock_path: &str) -> Result<(), Error> {
+    fn send_status(&self, sock_path: &str) -> Result<()> {
         let pid = pid_t::from(getpid());
         let ctrl_cmd = CtrlCommand {
             command: Command::Status,
@@ -99,7 +99,7 @@ impl Client {
         Ok(())
     }
 
-    fn send_stop(&self, sock_path: &str) -> Result<(), Error> {
+    fn send_stop(&self, sock_path: &str) -> Result<()> {
         let pid = pid_t::from(getpid());
         let ctrl_cmd = CtrlCommand {
             command: Command::Stop,

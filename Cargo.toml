@@ -1,6 +1,6 @@
 [package]
 name = "firestarter"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["mopemope <yutaka.matsubara@gmail.com>"]
 description = "A process and shared socket manager"
 keywords = ["socket", "process-manager", "systemd", "socketactivation"]
@@ -12,21 +12,20 @@ exclude = ["demo"]
 edition = "2018"
 
 [dependencies]
-clap = "2.32"
-failure = "0.1"
-failure_derive = "0.1"
-regex = "1.1"
+clap = "2.3"
+anyhow = "1.0"
+regex = "1.2"
 lazy_static = "1.2"
 log = "0.4"
-env_logger = "0.6"
-console = "0.7"
+env_logger = "0.7"
+console = "0.9"
 libc = "0.2"
-toml = "0.4"
+toml = "0.5.3"
 mio = "0.6"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-nix = "0.13"
+nix = "0.17"
 chrono = "0.4"
-glob = "0.2"
-nom = "4.1"
+glob = "0.3"
+nom = "4.2"

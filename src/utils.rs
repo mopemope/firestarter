@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-use std::{env, io, time};
-
+use crate::app::get_app_name;
+use anyhow::{Error, Result};
 use chrono::Duration;
 use libc;
-
-use crate::app::get_app_name;
+use log::warn;
+use std::path::PathBuf;
+use std::{env, io, time};
 
 pub trait IsMinusOne {
     fn is_minus_one(&self) -> bool;
@@ -21,17 +21,15 @@ impl IsMinusOne for isize {
     }
 }
 
-pub fn cvt<T: IsMinusOne>(t: T) -> io::Result<T> {
-    use std::io;
-
+pub fn cvt<T: IsMinusOne>(t: T) -> Result<T> {
     if t.is_minus_one() {
-        Err(io::Error::last_os_error())
+        Err(Error::new(io::Error::last_os_error()))
     } else {
         Ok(t)
     }
 }
 
-pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
+pub fn set_nonblock(fd: libc::c_int) -> Result<()> {
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);
         cvt(libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK)).map(|_| ())
@@ -51,13 +49,13 @@ pub fn get_process_watch_file(name: &str, id: u64) -> PathBuf {
     dir
 }
 
-pub fn get_process_mtime(name: &str, id: u64) -> io::Result<time::SystemTime> {
+pub fn get_process_mtime(name: &str, id: u64) -> Result<time::SystemTime> {
     let path = get_process_watch_file(name, id);
     let metadata = path.metadata()?;
     Ok(metadata.modified()?)
 }
 
-pub fn timeout_process(timeout: u64, name: &str, id: u64) -> io::Result<bool> {
+pub fn timeout_process(timeout: u64, name: &str, id: u64) -> Result<bool> {
     let mtime = get_process_mtime(name, id)?;
     let ret = match mtime.elapsed() {
         Ok(elapsed) => {
