@@ -1,48 +1,47 @@
-use std::io;
-use std::str::FromStr;
-
-use failure::{err_msg, Error};
+use anyhow::{Error, Result};
 use libc;
+use serde_derive::{Deserialize, Serialize};
+use std::str::FromStr;
 
 use crate::utils::cvt;
 
-pub fn send_sigkill(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigkill(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGKILL)).map(|_| ()) }
 }
 
-pub fn send_sigterm(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigterm(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGTERM)).map(|_| ()) }
 }
 
-pub fn send_sigint(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigint(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGINT)).map(|_| ()) }
 }
 
-pub fn send_sigquit(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigquit(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGQUIT)).map(|_| ()) }
 }
 
-pub fn send_sighup(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sighup(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGHUP)).map(|_| ()) }
 }
 
-pub fn send_sigwinch(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigwinch(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGWINCH)).map(|_| ()) }
 }
 
-pub fn send_sigttin(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigttin(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGTTIN)).map(|_| ()) }
 }
 
-pub fn send_sigttou(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigttou(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGTTOU)).map(|_| ()) }
 }
 
-pub fn send_sigusr1(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigusr1(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGUSR1)).map(|_| ()) }
 }
 
-pub fn send_sigusr2(pid: libc::pid_t) -> io::Result<()> {
+pub fn send_sigusr2(pid: libc::pid_t) -> Result<()> {
     unsafe { cvt(libc::kill(pid, libc::SIGUSR2)).map(|_| ()) }
 }
 
@@ -71,11 +70,11 @@ pub enum Signal {
 }
 
 pub trait SignalSend {
-    fn signal(&self, signal: Signal) -> io::Result<()>;
+    fn signal(&self, signal: Signal) -> Result<()>;
 }
 
 impl SignalSend for libc::pid_t {
-    fn signal(&self, signal: Signal) -> io::Result<()> {
+    fn signal(&self, signal: Signal) -> Result<()> {
         match signal {
             Signal::SIGKILL => {
                 send_sigkill(*self)?;
@@ -113,7 +112,7 @@ impl SignalSend for libc::pid_t {
 }
 
 impl SignalSend for u32 {
-    fn signal(&self, signal: Signal) -> io::Result<()> {
+    fn signal(&self, signal: Signal) -> Result<()> {
         let pid = *self as libc::pid_t;
         match signal {
             Signal::SIGKILL => {
@@ -154,7 +153,7 @@ impl SignalSend for u32 {
 impl FromStr for Signal {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Signal, Error> {
+    fn from_str(s: &str) -> Result<Signal> {
         match s {
             "SIGKILL" => Ok(Signal::SIGKILL),
             "SIGTERM" => Ok(Signal::SIGTERM),
@@ -166,7 +165,7 @@ impl FromStr for Signal {
             "SIGTTOU" => Ok(Signal::SIGTTOU),
             "SIGUSR1" => Ok(Signal::SIGUSR1),
             "SIGUSR2" => Ok(Signal::SIGUSR2),
-            _ => Err(err_msg(format!("{} not support.", s))),
+            _ => Err(anyhow::format_err!("{} not support.", s)),
         }
     }
 }

@@ -1,13 +1,14 @@
+use anyhow::{Error, Result};
+use log::{debug, warn};
+use nix::unistd::getpid;
+use serde_derive::{Deserialize, Serialize};
+use serde_json;
 use std::io::{BufRead, BufReader, Write};
 use std::ops::Add;
 use std::os::unix::net::UnixStream;
+use std::path;
 use std::str::FromStr;
 use std::string::ToString;
-use std::{io, path};
-
-use failure::{err_msg, Error};
-use nix::unistd::getpid;
-use serde_json;
 
 use crate::signal::Signal;
 
@@ -41,7 +42,7 @@ pub enum Command {
 impl FromStr for Command {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Command, Error> {
+    fn from_str(s: &str) -> Result<Command> {
         match s {
             "upgrade" => Ok(Command::Upgrade),
             "killall" => Ok(Command::KillAll),
@@ -51,7 +52,7 @@ impl FromStr for Command {
             "dec" => Ok(Command::Dec),
             "status" => Ok(Command::Status),
             "restart" => Ok(Command::Restart),
-            _ => Err(err_msg(format!("{} not support.", s))),
+            _ => Err(anyhow::format_err!("{} not support.", s)),
         }
     }
 }
@@ -126,7 +127,7 @@ impl ToString for ListResponse {
     }
 }
 
-pub fn read_daemon_command(stream: &mut UnixStream) -> io::Result<DaemonCommand> {
+pub fn read_daemon_command(stream: &mut UnixStream) -> Result<DaemonCommand> {
     let pid = getpid();
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -135,7 +136,7 @@ pub fn read_daemon_command(stream: &mut UnixStream) -> io::Result<DaemonCommand>
     match serde_json::from_str(&line) {
         Err(e) => {
             warn!("ctrl socket error. caused by: {}. pid [{}]", e, pid);
-            Err(io::Error::new(io::ErrorKind::InvalidInput, e))
+            Err(anyhow::format_err!("failed parse json"))
         }
         Ok(cmd) => {
             debug!("receive command. {:?}. pid [{}]", cmd, pid);
@@ -144,7 +145,7 @@ pub fn read_daemon_command(stream: &mut UnixStream) -> io::Result<DaemonCommand>
     }
 }
 
-pub fn read_command(stream: &UnixStream) -> io::Result<CtrlCommand> {
+pub fn read_command(stream: &UnixStream) -> Result<CtrlCommand> {
     let pid = getpid();
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -153,7 +154,7 @@ pub fn read_command(stream: &UnixStream) -> io::Result<CtrlCommand> {
     match serde_json::from_str(&line) {
         Err(e) => {
             warn!("fail deserialize command. caused by: {}. pid [{}]", e, pid);
-            Err(io::Error::new(io::ErrorKind::InvalidInput, e))
+            Err(anyhow::format_err!("failed parse json"))
         }
         Ok(cmd) => {
             debug!("receive command. {:?}. pid [{}]", cmd, pid);
@@ -162,7 +163,7 @@ pub fn read_command(stream: &UnixStream) -> io::Result<CtrlCommand> {
     }
 }
 
-pub fn send_ctrl_command(sock_path: &str, cmd: &CtrlCommand) -> io::Result<CommandResponse> {
+pub fn send_ctrl_command(sock_path: &str, cmd: &CtrlCommand) -> Result<CommandResponse> {
     if path::Path::new(sock_path).exists() {
         let pid = getpid();
         debug!("send command to {}. pid [{}]", sock_path, pid);
@@ -180,19 +181,13 @@ pub fn send_ctrl_command(sock_path: &str, cmd: &CtrlCommand) -> io::Result<Comma
         let res = serde_json::from_str(&line)?;
         Ok(res)
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "require sock path",
-        ))
+        Err(anyhow::format_err!("require sock path"))
     }
 }
 
-pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> io::Result<Box<dyn ToString>> {
+pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> Result<Box<dyn ToString>> {
     if !path::Path::new(sock_path).exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "require sock path",
-        ));
+        return Err(anyhow::format_err!("require sock path",));
     }
     let pid = getpid();
     debug!("send command to {}. cmd {:?} pid [{}]", sock_path, cmd, pid);
@@ -222,12 +217,9 @@ pub fn send_daemon_command(sock_path: &str, cmd: &DaemonCommand) -> io::Result<B
 pub fn send_daemon_list_command(
     sock_path: &str,
     cmd: &DaemonCommand,
-) -> io::Result<Vec<Box<dyn ToString>>> {
+) -> Result<Vec<Box<dyn ToString>>> {
     if !path::Path::new(sock_path).exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "require sock path",
-        ));
+        return Err(anyhow::format_err!("require sock path",));
     }
     let pid = getpid();
     debug!("send command to {}. cmd {:?} pid [{}]", sock_path, cmd, pid);
@@ -254,7 +246,7 @@ pub fn send_daemon_list_command(
     Ok(result)
 }
 
-pub fn send_response(stream: &mut UnixStream, res: &CommandResponse) -> io::Result<()> {
+pub fn send_response(stream: &mut UnixStream, res: &CommandResponse) -> Result<()> {
     let buf = serde_json::to_string(res)?;
     stream.write_all(buf.as_bytes())?;
     stream.write_all(b"\n")?;

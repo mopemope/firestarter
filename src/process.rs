@@ -1,3 +1,9 @@
+use crate::app::APP_NAME_UPPER;
+use crate::config::WorkerConfig;
+use crate::utils::{get_process_watch_file, timeout_process};
+use libc;
+use log::{debug, error, info, warn};
+use nix::unistd::getpid;
 use std::collections::HashMap;
 use std::io::{copy, Read, Write};
 use std::os::unix::process::CommandExt;
@@ -5,13 +11,6 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::{fs, io, thread, time};
-
-use libc;
-use nix::unistd::getpid;
-
-use crate::app::APP_NAME_UPPER;
-use crate::config::WorkerConfig;
-use crate::utils::{get_process_watch_file, timeout_process};
 
 #[derive(Debug)]
 pub struct Process<'a> {
@@ -28,7 +27,7 @@ pub struct Process<'a> {
     watch_file: Option<PathBuf>,
 }
 
-impl<'a> PartialEq for Process<'a> {
+impl PartialEq for Process<'_> {
     fn eq(&self, other: &Process) -> bool {
         self.cmdline == other.cmdline
     }
@@ -142,7 +141,7 @@ impl<'a> Process<'a> {
             f.sync_all()?;
             if let Some(file_path) = path.to_str() {
                 environment.insert(
-                    format!("{}_WATCH_FILE", APP_NAME_UPPER).to_owned(),
+                    format!("{}_WATCH_FILE", APP_NAME_UPPER),
                     file_path.to_owned(),
                 );
             }

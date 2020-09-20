@@ -1,20 +1,3 @@
-use std::collections::HashMap;
-use std::io::{copy, Write};
-use std::os::unix::io::{FromRawFd, RawFd};
-use std::os::unix::net::UnixListener;
-use std::process::{exit, Child};
-use std::string::String;
-use std::{env, fs, io, path, thread, time};
-
-use failure::{err_msg, Error};
-use glob::glob;
-use libc;
-use mio::unix::EventedFd;
-use mio::{Events, Poll, PollOpt, Ready, Token};
-use nix::sys::signal;
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{close, fork, getpid, ForkResult, Pid};
-
 use crate::app::{get_app_name, APP_NAME_UPPER};
 use crate::command::*;
 use crate::config::WorkerConfig;
@@ -24,6 +7,22 @@ use crate::signal::Signal;
 use crate::sock::ListenFd;
 use crate::utils::{format_duration, set_nonblock};
 use crate::worker::Worker;
+use anyhow::{Context, Error, Result};
+use glob::glob;
+use libc;
+use log::{debug, error, info, trace, warn};
+use mio::unix::EventedFd;
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use nix::sys::signal;
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::unistd::{close, fork, getpid, ForkResult, Pid};
+use std::collections::HashMap;
+use std::io::{copy, Write};
+use std::os::unix::io::{FromRawFd, RawFd};
+use std::os::unix::net::UnixListener;
+use std::process::{exit, Child};
+use std::string::String;
+use std::{env, fs, path, thread, time};
 
 extern "C" fn handle_signal(signum: i32) {
     let s = signum as libc::c_int;
@@ -73,13 +72,13 @@ impl Drop for MonitorProcess {
 }
 
 impl MonitorProcess {
-    pub fn new(name: &str, config: &WorkerConfig) -> Self {
+    pub fn new(name: &str, config: &WorkerConfig) -> Result<Self> {
         let sock_path = config.control_sock(&name);
         let cmd_path = reloader::cmd_path(&config);
-        let metadata = cmd_path.metadata().unwrap();
-        let cmd_mtime = metadata.modified().unwrap();
+        let metadata = cmd_path.metadata().context("failed get metadata")?;
+        let cmd_mtime = metadata.modified().context("failed get metadata")?;
 
-        MonitorProcess {
+        Ok(MonitorProcess {
             name: name.to_owned(),
             pid: None,
             sock_path,
@@ -88,7 +87,7 @@ impl MonitorProcess {
             cmd_mtime,
             upgrade_process: None,
             upgrade_active_time: time::SystemTime::now(),
-        }
+        })
     }
 
     pub fn is_upgrade_active_time(&self, timeout: u64) -> bool {
@@ -154,16 +153,16 @@ impl MonitorProcess {
         }
     }
 
-    pub fn send_ctrl_command(&self, cmd: &CtrlCommand) -> io::Result<()> {
+    pub fn send_ctrl_command(&self, cmd: &CtrlCommand) -> Result<()> {
         let sock_path = &self.sock_path;
         send_ctrl_command(sock_path, cmd)?;
         Ok(())
     }
 
-    fn listen_fds(&mut self, config: &WorkerConfig) -> Result<Vec<RawFd>, Error> {
+    fn listen_fds(&mut self, config: &WorkerConfig) -> Result<Vec<RawFd>> {
         let mut fds = Vec::new();
         for addr in &config.socket_address {
-            let listen_fd: ListenFd = addr.parse().unwrap();
+            let listen_fd: ListenFd = addr.parse().context("failed parse sock addr")?;
             debug!("try listen sock {}. pid [{}]", addr, getpid());
             let raw_fd = listen_fd.create_raw_fd(128)?;
             info!(
@@ -176,9 +175,9 @@ impl MonitorProcess {
         Ok(fds)
     }
 
-    fn listen_ctrl_sock(&mut self) -> Result<RawFd, Error> {
+    fn listen_ctrl_sock(&mut self) -> Result<RawFd> {
         let control_sock = &self.sock_path;
-        let listen_fd: ListenFd = control_sock.parse().unwrap();
+        let listen_fd: ListenFd = control_sock.parse().context("failed parse socket")?;
         match listen_fd {
             ListenFd::UnixListener(_) => {
                 let raw_fd = listen_fd.create_raw_fd(1)?;
@@ -189,11 +188,11 @@ impl MonitorProcess {
                 );
                 Ok(raw_fd)
             }
-            _ => Err(err_msg(format!("{:?} not support", listen_fd))),
+            _ => Err(anyhow::format_err!("{:?} not support", listen_fd)),
         }
     }
 
-    pub fn try_wait(&mut self) -> Result<ExitStatus, Error> {
+    pub fn try_wait(&mut self) -> Result<ExitStatus> {
         let self_pid = getpid();
         let flag = WaitPidFlag::WNOHANG;
         match waitpid(None, Some(flag)) {
@@ -238,14 +237,15 @@ impl MonitorProcess {
                 }
             }
             Ok(_) => Ok(ExitStatus::ForceExit),
-            Err(e) => Err(err_msg(format!(
+            Err(e) => Err(anyhow::format_err!(
                 "fail monitor process wait. caused by: {}. pid [{}]",
-                e, self_pid
-            ))),
+                e,
+                self_pid
+            )),
         }
     }
 
-    pub fn spawn(&mut self, name: &str, config: &WorkerConfig) -> io::Result<bool> {
+    pub fn spawn(&mut self, name: &str, config: &WorkerConfig) -> Result<bool> {
         let key = config.environment_base_name.to_owned();
         match fork().expect("failed fork") {
             ForkResult::Parent { child } => {
@@ -271,30 +271,30 @@ impl MonitorProcess {
         key: &str,
         worker: &mut Worker,
         config: &WorkerConfig,
-    ) -> io::Result<bool> {
+    ) -> Result<bool> {
         let sa = signal::SigAction::new(
             signal::SigHandler::Handler(handle_signal),
             signal::SaFlags::empty(),
             signal::SigSet::empty(),
         );
         unsafe {
-            signal::sigaction(signal::SIGINT, &sa).unwrap();
-            signal::sigaction(signal::SIGQUIT, &sa).unwrap();
-            signal::sigaction(signal::SIGTERM, &sa).unwrap();
-            signal::sigaction(signal::SIGABRT, &sa).unwrap();
-            signal::sigaction(signal::SIGHUP, &sa).unwrap();
+            signal::sigaction(signal::SIGINT, &sa).context("failed set sigaction")?;
+            signal::sigaction(signal::SIGQUIT, &sa).context("failed set sigaction")?;
+            signal::sigaction(signal::SIGTERM, &sa).context("failed set sigaction")?;
+            signal::sigaction(signal::SIGABRT, &sa).context("failed set sigaction")?;
+            signal::sigaction(signal::SIGHUP, &sa).context("failed set sigaction")?;
         }
         if config.warmup_delay > 0 {
             let delay = time::Duration::from_secs(config.warmup_delay);
             thread::sleep(delay);
         }
 
-        let pid = self.pid.unwrap();
+        let pid = self.pid.context("failed get pid")?;
         info!("launched [{}] monitor process. pid [{}]", worker.name, pid);
         // 1. close all fd
         close_fds();
         // 2. listen fd
-        let fds = self.listen_fds(config).unwrap();
+        let fds = self.listen_fds(config).context("failed listen fd")?;
         // child
         if !fds.is_empty() {
             let listen_fds = fds.len();
@@ -314,14 +314,16 @@ impl MonitorProcess {
         }
 
         // 3. open control socket
-        let ctrl_fd = self.listen_ctrl_sock().unwrap();
+        let ctrl_fd = self
+            .listen_ctrl_sock()
+            .context("failed open control socket")?;
         worker.add_extra_env(&format!("{}_SOCK_FD", key), &ctrl_fd.to_string());
         worker.add_extra_env(&format!("{}_SOCK_PATH", key), &self.sock_path);
         worker.add_extra_env(&format!("{}_MASTER_PID", key), &getpid().to_string());
 
         let giveup = config.giveup;
         // 4. create monitor
-        let mut monitor = Monitor::new(ctrl_fd, giveup);
+        let mut monitor = Monitor::new(ctrl_fd, giveup)?;
         monitor.watch_ctrl_fd(ctrl_fd)?;
         // 5. spawn worker
         if fds.is_empty() || worker.start_immediate() {
@@ -351,7 +353,7 @@ impl MonitorProcess {
         Ok(false)
     }
 
-    pub fn stop(&mut self) -> io::Result<()> {
+    pub fn stop(&mut self) -> Result<()> {
         self.send_ctrl_command(&CtrlCommand {
             command: Command::StopMonitor,
             pid: 0,
@@ -359,7 +361,7 @@ impl MonitorProcess {
         })
     }
 
-    pub fn kill_all(&mut self) -> io::Result<()> {
+    pub fn kill_all(&mut self) -> Result<()> {
         self.send_ctrl_command(&CtrlCommand {
             command: Command::KillAll,
             pid: 0,
@@ -409,11 +411,12 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    pub fn new(fd: RawFd, giveup: u64) -> Self {
+    pub fn new(fd: RawFd, giveup: u64) -> Result<Self> {
         let listener: UnixListener = unsafe { UnixListener::from_raw_fd(fd) };
         let pid = getpid();
-        Monitor {
-            poll: Poll::new().unwrap(),
+        let poll = Poll::new().context("failed create poll")?;
+        Ok(Monitor {
+            poll,
             token_count: 0,
             io_events: HashMap::new(),
             fd_events: HashMap::new(),
@@ -421,7 +424,7 @@ impl Monitor {
             giveup,
             active: false,
             pid,
-        }
+        })
     }
 
     fn next_token(&mut self) -> Token {
@@ -429,7 +432,7 @@ impl Monitor {
         Token(self.token_count)
     }
 
-    pub fn watch_io(&mut self, fd: RawFd, kind: OutputKind) -> io::Result<()> {
+    pub fn watch_io(&mut self, fd: RawFd, kind: OutputKind) -> Result<()> {
         let token = self.next_token();
         set_nonblock(fd)?;
         self.poll
@@ -438,7 +441,7 @@ impl Monitor {
         Ok(())
     }
 
-    pub fn watch_listen_fd(&mut self, fd: RawFd) -> io::Result<()> {
+    pub fn watch_listen_fd(&mut self, fd: RawFd) -> Result<()> {
         let token = self.next_token();
         self.poll
             .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::edge())?;
@@ -447,7 +450,7 @@ impl Monitor {
         Ok(())
     }
 
-    pub fn watch_ctrl_fd(&mut self, fd: RawFd) -> io::Result<()> {
+    pub fn watch_ctrl_fd(&mut self, fd: RawFd) -> Result<()> {
         let token = self.next_token();
         self.poll
             .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::level())?;
@@ -461,7 +464,7 @@ impl Monitor {
         command: &Command,
         signal: Option<Signal>,
         worker: &mut Worker,
-    ) -> io::Result<CommandResponse> {
+    ) -> Result<CommandResponse> {
         let name = worker.name.to_owned();
         let ack_signal = worker.config.ack_signal;
         let self_pid = libc::pid_t::from(self.pid) as u32;
@@ -604,7 +607,7 @@ impl Monitor {
         }
     }
 
-    fn wait_activate_socket(&mut self, worker: &mut Worker) -> io::Result<()> {
+    fn wait_activate_socket(&mut self, worker: &mut Worker) -> Result<()> {
         // activate
         let mut events = Events::with_capacity(8);
         while !worker.active {
@@ -630,7 +633,7 @@ impl Monitor {
         Ok(())
     }
 
-    fn process_log_event(&mut self, worker: &mut Worker, token: Token) -> io::Result<bool> {
+    fn process_log_event(&mut self, worker: &mut Worker, token: Token) -> Result<bool> {
         let remove = if let Some(ref mut event) = self.io_events.get_mut(&token) {
             let mut remove = false;
             let size = match event.kind {
@@ -648,7 +651,7 @@ impl Monitor {
                                     writer.flush()?;
                                     return Ok(false);
                                 } else {
-                                    return Err(e);
+                                    return Err(Error::new(e));
                                 }
                             }
                         }
@@ -670,7 +673,7 @@ impl Monitor {
                                     writer.flush()?;
                                     return Ok(false);
                                 } else {
-                                    return Err(e);
+                                    return Err(Error::new(e));
                                 }
                             }
                         }
@@ -690,7 +693,7 @@ impl Monitor {
         Ok(remove)
     }
 
-    fn get_listen_event(&mut self, token: Token) -> io::Result<Option<RawFd>> {
+    fn get_listen_event(&mut self, token: Token) -> Result<Option<RawFd>> {
         let res = if let Some(ref mut event) = self.fd_events.get_mut(&token) {
             match event {
                 FdEvent::LisetnFdEvent(fd, _) => Some(*fd),
@@ -711,7 +714,7 @@ impl Monitor {
         false
     }
 
-    fn get_ack_event(&mut self, token: Token) -> io::Result<Option<Signal>> {
+    fn get_ack_event(&mut self, token: Token) -> Result<Option<Signal>> {
         if self.is_ctrl_event(token) {
             let (stream, _addr) = &mut self.ctrl_sock.accept()?;
             let cmd = read_command(stream)?;
@@ -729,7 +732,7 @@ impl Monitor {
         Ok(None)
     }
 
-    fn process_ctrl_event(&mut self, worker: &mut Worker, token: Token) -> io::Result<()> {
+    fn process_ctrl_event(&mut self, worker: &mut Worker, token: Token) -> Result<()> {
         if self.is_ctrl_event(token) {
             let (mut stream, _addr) = self.ctrl_sock.accept()?;
             let cmd = read_command(&stream)?;
@@ -742,7 +745,7 @@ impl Monitor {
         Ok(())
     }
 
-    pub fn start(&mut self, worker: &mut Worker) -> io::Result<()> {
+    pub fn start(&mut self, worker: &mut Worker) -> Result<()> {
         info!("start [{}] monitor. pid [{}]", worker.name, self.pid);
         self.active = true;
         // listen activate socket
@@ -808,7 +811,7 @@ impl Monitor {
         Ok(())
     }
 
-    pub fn wait_ack(&mut self, worker: &mut Worker, ack_signal: Signal) -> io::Result<Vec<Signal>> {
+    pub fn wait_ack(&mut self, worker: &mut Worker, ack_signal: Signal) -> Result<Vec<Signal>> {
         let mut events = Events::with_capacity(1024);
         let mut ack = Vec::new();
         let timeout = Some(time::Duration::from_secs(1));
@@ -820,7 +823,7 @@ impl Monitor {
                 if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
                     exit(-1);
                 }
-                return Err(e);
+                return Err(Error::new(e));
             }
             count += 1;
             for event in &events {
@@ -849,11 +852,7 @@ impl Monitor {
         Ok(ack)
     }
 
-    pub fn wait_on_upgrader(
-        &mut self,
-        worker: &mut Worker,
-        upgrader: &mut Child,
-    ) -> io::Result<bool> {
+    pub fn wait_on_upgrader(&mut self, worker: &mut Worker, upgrader: &mut Child) -> Result<bool> {
         let timeout = Some(time::Duration::from_secs(1));
         let mut events = Events::with_capacity(1024);
         let mut now = time::SystemTime::now();
@@ -867,7 +866,7 @@ impl Monitor {
                 if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
                     exit(-1);
                 }
-                return Err(e);
+                return Err(Error::new(e));
             }
             for event in &events {
                 let token = event.token();
@@ -924,7 +923,7 @@ impl Monitor {
         }
     }
 
-    pub fn wait_process_io(&mut self, worker: &mut Worker, secs: u64) -> io::Result<()> {
+    pub fn wait_process_io(&mut self, worker: &mut Worker, secs: u64) -> Result<()> {
         let mut events = Events::with_capacity(1024);
         let now = time::SystemTime::now();
         let timeout = Some(time::Duration::from_secs(secs));
@@ -955,7 +954,7 @@ impl Monitor {
                     if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
                         exit(-1);
                     }
-                    return Err(e);
+                    return Err(Error::new(e));
                 }
             }
         }
