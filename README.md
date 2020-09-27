@@ -162,10 +162,6 @@ ack = "manual"
 # if not set, execute the upgrade command when executing the upgrade ctrl command.
 # upgrader_active_sec=10
 # upgrader_timeout=60
-
-...
-
-
 ```
 
 ## Control command
