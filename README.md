@@ -2,9 +2,9 @@
 
 [![crates.io](https://img.shields.io/crates/v/firestarter.svg)](https://crates.io/crates/firestarter)
 [![Patreon](https://img.shields.io/badge/patreon-become%20a%20patron-red.svg)](https://www.patreon.com/mopemope)
-[![Build Status](https://travis-ci.org/mopemope/firestarter.svg?branch=master)](https://travis-ci.org/palfrey/firestarter)
+[![Build Status](https://travis-ci.org/mopemope/firestarter.svg?branch=master)](https://travis-ci.org/mopemope/firestarter)
 
-Firestarter is simple process and shared socket manager, it designed like [circus][] and [einhorn][], it works with lightweight and faster.
+Firestarter is a simple process and shared socket manager, it is designed like [circus][] and [einhorn][], but lightweight and faster.
 
 Firestarter can manage groups of processes and shared sockets like [circus][]. And like [einhorn][] we support manual ack.
 And you can control Firestarter daemon, such as increasing worker process from ctrl command.
@@ -26,7 +26,7 @@ Firestarter uses explicit configuration files rather than complex command line o
 
 You can get `firestarter` by installing it with cargo:
 
-```
+```sh
 $ cargo install firestarter
 ```
 
@@ -56,13 +56,13 @@ SUBCOMMANDS:
 
 Example
 
-```
+```sh
 $ firestarter run --config misc/config.toml
 ```
 
 The configuration file uses toml. An example is below.
 
-```
+```toml
 [worker1] # set worker group name.
 
 # set to commands with their arguments that are executed when this worker is started.
@@ -174,7 +174,7 @@ Firestarter also provides a client that controls the running daemon.
 
 For example, you can check the status with the following command.
 
-```
+```sh
 $ firestarter ctrl worker1 status
 send ctrl command [status] to [worker1] worker
 [worker1] active
