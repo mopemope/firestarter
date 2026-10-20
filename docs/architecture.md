@@ -123,9 +123,8 @@ Death by any other signal -> treated like 255 (respawned).
   (`config.rs`, `logs.rs`).
 - `MonitorProcess::try_wait` calls `waitpid(None, WNOHANG)` (any child) inside a per-monitor loop, so with several
   worker groups an exit can be attributed to the wrong monitor.
-- Debug builds abort when the daemon starts on current rustc: nix 0.17's `offset_of!` dereferences a null
-  pointer, which newer compilers trap when debug assertions are on. Use `--release` binaries to run the daemon
-  (unit tests are unaffected). Fix = upgrade `nix` (API changes in `sock.rs`, `signal.rs`, `monitor.rs`, `daemon.rs`).
+- Debug builds run fine since the `nix` 0.31 upgrade (the old nix 0.17 `offset_of!` debug abort is gone; the
+  upgrade touched `sock.rs`, `monitor.rs`, `daemon.rs`).
 - Signal handlers communicate via `env::set_var("<APP>_HANDLE_SIGNAL", ..)` and the poll loop checks it afterwards.
   Not async-signal-safe; keep handlers minimal.
 - `nom 4` triggers a future-incompatibility warning; the tokenizer in `config.rs` is the only user.

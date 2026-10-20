@@ -22,8 +22,8 @@ Read `docs/architecture.md` before changing lifecycle, upgrade/ack, signals, or 
 ## Rules that are not obvious from the code
 - `exec_start` must be an absolute path (or relative to `working_directory`); no `PATH` lookup. Tests/configs using
   bare `sleep` panic the daemon.
-- Debug builds of the daemon abort on current rustc (nix 0.17 `offset_of!` null deref). Run the daemon from
-  `--release` only. Unit tests are fine in debug. Don't "fix" this by editing code; the real fix is a `nix` upgrade.
+- Debug builds of the daemon run fine since the nix 0.31 upgrade (the old nix 0.17 `offset_of!`
+  debug abort is gone). Unit tests are still fine in debug.
 - Wire names in `command.rs` (`worker:upgrade`, ...) are a protocol; changing them breaks running daemons and
   manual-ack workers. `command::test_command_wire_format` guards it.
 - Stay single-threaded before `fork`. No new threads/async runtime in daemon or monitor paths.

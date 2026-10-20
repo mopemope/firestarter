@@ -3,8 +3,8 @@
 # Isolated via FIRESTARTER_APP_NAME + TMPDIR, so it is safe next to a real daemon.
 # Output is one line per step; the full daemon log is shown only on failure.
 #
-# NOTE: runs the *release* binary on purpose. With debug assertions on, nix 0.17
-# (offset_of! null deref) aborts on rustc >= 1.7x, so a debug daemon cannot start.
+# NOTE: runs the *release* binary (debug builds work since the nix 0.31 upgrade;
+# release is kept so the sweep is fast).
 #
 #   scripts/smoke.sh            # builds (release) and runs
 #   RUST_LOG=debug scripts/smoke.sh
