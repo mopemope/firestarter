@@ -45,7 +45,14 @@ impl Client {
         command: &str,
         signal: Option<&str>,
     ) -> Result<()> {
-        let signal: Option<Signal> = signal.map(|signal| signal.parse().unwrap());
+        let signal = match signal {
+            Some(signal) => Some(
+                signal
+                    .parse::<Signal>()
+                    .with_context(|| format!("failed parse signal {}", signal))?,
+            ),
+            None => None,
+        };
         let cmd: Command = command.parse().context("failed parse command")?;
         let pid = pid_t::from(getpid());
         let ctrl_cmd = CtrlCommand {
@@ -118,4 +125,13 @@ impl Client {
         }
         Ok(())
     }
+}
+
+#[test]
+fn test_send_ctrl_command_invalid_signal() {
+    let client = Client {};
+    let err = client
+        .send_ctrl_command("/nonexistent/foo.socket", "w1", "start", Some("SIGBOGUS"))
+        .unwrap_err();
+    assert!(err.to_string().contains("failed parse signal"), "{}", err);
 }

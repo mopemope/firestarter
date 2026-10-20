@@ -12,7 +12,7 @@ exclude = ["demo"]
 edition = "2018"
 
 [dependencies]
-clap = "2.3"
+clap = "4"
 anyhow = "1.0.19"
 regex = "1.2"
 lazy_static = "1.2"
