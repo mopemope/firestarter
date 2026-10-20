@@ -2,7 +2,8 @@
 // - honors the LISTEN_FDS fd-3 handoff exactly like before, falling back to 127.0.0.1:3000;
 // - sends the manual ack when FIRESTARTER_SOCK_PATH is set (the wire format is
 //   guarded by command.rs's test_command_wire_format);
-// - answers "Hello World!" on GET requests.
+// - answers "Hello World!" for "/" like the old actix demo (all methods);
+//   other paths get 404.
 
 use std::env;
 use std::io::{Read, Write};
@@ -45,25 +46,38 @@ fn main() {
 }
 
 fn handle(mut stream: TcpStream) {
-    // consume the request so the client does not error on a reset connection
+    // actix dispatched on a fully received request line: accumulate until the
+    // first '\n' (or EOF / buffer full) so a TCP segment boundary inside the
+    // request line cannot be judged as a wrong request.
     let mut buf = [0u8; 1024];
-    if stream.read(&mut buf).is_err() {
-        return;
-    }
-    // The old actix demo served "Hello World!" for GET /; keep the same
-    // contract: other methods get 405, other paths get 404.
-    let line_end = buf.iter().position(|&b| b == b'\n').unwrap_or(buf.len());
-    let mut parts = buf[..line_end]
+    let mut used = 0;
+    let line_end = loop {
+        if used == buf.len() {
+            break buf.len();
+        }
+        match stream.read(&mut buf[used..]) {
+            Ok(0) => break used,
+            Ok(n) => {
+                used += n;
+                if let Some(pos) = buf[..used].iter().position(|&b| b == b'\n') {
+                    break pos;
+                }
+            }
+            Err(_) => return,
+        }
+    };
+    // Same contract as the original actix demo (resource("/", r.f(index)),
+    // an unfiltered route): every method on "/" answers "Hello World!";
+    // other paths get 404 (actix's default for unmatched paths).
+    let path = buf[..line_end]
         .split(|&b| b == b' ')
-        .filter(|p| !p.is_empty());
-    let method = parts.next().unwrap_or(b"");
-    let path = parts.next().unwrap_or(b"");
-    let response: &[u8] = if method != b"GET" {
-        b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-    } else if path != b"/" {
-        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-    } else {
+        .filter(|p| !p.is_empty())
+        .nth(1)
+        .unwrap_or(b"");
+    let response: &[u8] = if path == b"/" {
         HTTP_RESPONSE
+    } else {
+        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     };
     let _ = stream.write_all(response);
     let _ = stream.flush();
