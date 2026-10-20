@@ -47,7 +47,24 @@ fn main() {
 fn handle(mut stream: TcpStream) {
     // consume the request so the client does not error on a reset connection
     let mut buf = [0u8; 1024];
-    let _ = stream.read(&mut buf);
-    stream.write_all(HTTP_RESPONSE).unwrap();
-    stream.flush().unwrap();
+    if stream.read(&mut buf).is_err() {
+        return;
+    }
+    // The old actix demo served "Hello World!" for GET /; keep the same
+    // contract: other methods get 405, other paths get 404.
+    let line_end = buf.iter().position(|&b| b == b'\n').unwrap_or(buf.len());
+    let mut parts = buf[..line_end]
+        .split(|&b| b == b' ')
+        .filter(|p| !p.is_empty());
+    let method = parts.next().unwrap_or(b"");
+    let path = parts.next().unwrap_or(b"");
+    let response: &[u8] = if method != b"GET" {
+        b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    } else if path != b"/" {
+        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    } else {
+        HTTP_RESPONSE
+    };
+    let _ = stream.write_all(response);
+    let _ = stream.flush();
 }

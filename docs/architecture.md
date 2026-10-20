@@ -113,7 +113,7 @@ Death by any other signal -> treated like 255 (respawned).
 | `signal.rs` | `Signal` enum (serde names), `kill(2)` wrappers |
 | `reloader.rs` | locate the `exec_start` binary and detect modification |
 | `app.rs`, `utils.rs` | app name / env override, small helpers |
-| `demo/` | separate crate (actix-web + listenfd) used as a sample worker; excluded from the package |
+| `demo/` | separate crate, zero external dependencies; std-only sample worker (LISTEN_FDS handoff + manual ack); excluded from the package |
 
 ## 5. Known quirks (read before "fixing")
 
