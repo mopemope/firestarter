@@ -319,3 +319,41 @@ fn test_parse_cmd_env() {
     let tokens = parse_cmd("echo $MY_VAR/dir").unwrap();
     assert_eq!("VALUE/dir", tokens[1]);
 }
+
+#[test]
+fn test_need_respawn() {
+    assert!(!RestartStrategy::None.need_respawn(0));
+    assert!(!RestartStrategy::None.need_respawn(1));
+    assert!(RestartStrategy::Always.need_respawn(0));
+    assert!(RestartStrategy::Always.need_respawn(1));
+    assert!(!RestartStrategy::OnFailure.need_respawn(0));
+    assert!(RestartStrategy::OnFailure.need_respawn(1));
+}
+
+#[test]
+fn test_parse_sample_config() {
+    // keeps misc/config.toml (and the README example derived from it) parseable.
+    let config = parse_config("misc/config.toml").unwrap();
+    let w = &config.workers["worker1"];
+    assert_eq!(vec!["./demo/target/debug/demo"], w.exec_start_cmd);
+    assert_eq!(1, w.numprocesses);
+    assert!(w.start_immediate);
+    assert_eq!(vec!["127.0.0.1:4000"], w.socket_address);
+    assert!(matches!(w.restart, RestartStrategy::OnFailure));
+    assert!(matches!(w.ack, AckKind::Manual));
+    // upgrader without upgrader_active_sec runs on the upgrade command.
+    assert_eq!(RunUpgrader::OnUpgrade, w.run_upgrader);
+    assert_eq!(vec!["/a/b/upgrader", "--config", "abc"], w.upgrader_cmd);
+}
+
+#[test]
+fn test_worker_config_defaults() {
+    let w: WorkerConfig = from_str(r#"exec_start = "/bin/true""#).unwrap();
+    assert_eq!(1, w.numprocesses);
+    assert!(!w.start_immediate);
+    assert!(matches!(w.restart, RestartStrategy::None));
+    assert!(matches!(w.ack, AckKind::Timer));
+    assert_eq!(signal::Signal::SIGUSR2, w.ack_signal);
+    assert_eq!(300, w.upgrader_timeout);
+    assert_eq!(0, w.live_check_timeout);
+}

@@ -69,3 +69,10 @@ pub fn timeout_process(timeout: u64, name: &str, id: u64) -> Result<bool> {
     };
     Ok(ret)
 }
+
+#[test]
+fn test_format_duration() {
+    assert_eq!("00:00:06", format_duration(&Duration::seconds(6)));
+    assert_eq!("01:02:03", format_duration(&Duration::seconds(3723)));
+    assert_eq!("25:00:00", format_duration(&Duration::hours(25)));
+}

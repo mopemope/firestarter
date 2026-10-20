@@ -169,3 +169,11 @@ impl FromStr for Signal {
         }
     }
 }
+
+#[test]
+fn test_signal_from_str() {
+    assert_eq!(Signal::SIGTERM, "SIGTERM".parse().unwrap());
+    assert_eq!(Signal::SIGUSR2, "SIGUSR2".parse().unwrap());
+    assert!("SIGFOO".parse::<Signal>().is_err());
+    assert!("sigterm".parse::<Signal>().is_err());
+}

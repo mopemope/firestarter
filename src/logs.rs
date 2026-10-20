@@ -337,3 +337,10 @@ fn get_log_names(p: &Path) -> (&Path, &str, &str) {
     let ext = log_ext.to_str().unwrap();
     (parent, name, ext)
 }
+
+#[test]
+fn test_log_file_from_str() {
+    assert!("size:10240:5:/tmp/out.log".parse::<LogFile>().is_ok());
+    assert!("time:3:D:U:7:/tmp/out.log".parse::<LogFile>().is_ok());
+    assert!("rotate:1:/tmp/out.log".parse::<LogFile>().is_err());
+}

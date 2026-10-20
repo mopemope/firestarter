@@ -165,3 +165,27 @@ fn sock_info(fd: &ListenFd) -> Result<(socket::SockAddr, socket::AddressFamily, 
         ),
     })
 }
+
+#[test]
+fn test_listen_fd_from_str() {
+    // bare port -> loopback tcp
+    match "4000".parse::<ListenFd>().unwrap() {
+        ListenFd::TcpListener(addr) => assert_eq!("127.0.0.1:4000", addr.to_string()),
+        fd => panic!("unexpected {:?}", fd),
+    }
+    assert!(matches!(
+        "127.0.0.1:4001".parse::<ListenFd>().unwrap(),
+        ListenFd::TcpListener(_)
+    ));
+    // a path is a unix socket
+    assert!(matches!(
+        "/tmp/foo.sock".parse::<ListenFd>().unwrap(),
+        ListenFd::UnixListener(_)
+    ));
+    assert!(matches!(
+        "udp::127.0.0.1:4002".parse::<ListenFd>().unwrap(),
+        ListenFd::UdpSocket(_)
+    ));
+    assert!("foo".parse::<ListenFd>().is_err());
+    assert!("bar::1234".parse::<ListenFd>().is_err());
+}

@@ -253,3 +253,33 @@ pub fn send_response(stream: &mut UnixStream, res: &CommandResponse) -> Result<(
     stream.flush()?;
     Ok(())
 }
+
+// The JSON names below are the wire protocol between daemon, monitor and ctrl client.
+#[test]
+fn test_command_wire_format() {
+    let cmd = CtrlCommand {
+        command: Command::Upgrade,
+        pid: 1,
+        signal: Some(Signal::SIGUSR2),
+    };
+    assert_eq!(
+        r#"{"command":"worker:upgrade","pid":1,"signal":"SIGUSR2"}"#,
+        serde_json::to_string(&cmd).unwrap()
+    );
+    // the manual-ack message sent by workers (see demo/src/main.rs)
+    let ack: CtrlCommand =
+        serde_json::from_str(r#"{"command":"worker:ack", "pid":0,"signal":null}"#).unwrap();
+    assert_eq!(Command::Ack, ack.command);
+    assert!(ack.signal.is_none());
+}
+
+#[test]
+fn test_command_from_str() {
+    for name in &[
+        "start", "stop", "inc", "dec", "upgrade", "killall", "status", "restart",
+    ] {
+        assert!(name.parse::<Command>().is_ok(), "{}", name);
+    }
+    assert!("ack".parse::<Command>().is_err());
+    assert!("bogus".parse::<Command>().is_err());
+}
