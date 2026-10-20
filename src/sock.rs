@@ -1,11 +1,10 @@
 use anyhow::{Context, Error, Result};
 use lazy_static::lazy_static;
-use libc::close;
 use nix::sys::socket;
 use regex::Regex;
 use std::fmt::Display;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -117,31 +116,40 @@ impl FromStr for ListenFd {
 }
 
 pub fn create_raw_fd(fd: &ListenFd, backlog: usize) -> Result<RawFd> {
-    let (addr, fam, ty) = sock_info(fd)?;
+    let (fam, ty) = sock_info(fd)?;
+    let backlog = socket::Backlog::new(backlog as i32)?;
     let sock = socket::socket(fam, ty, socket::SockFlag::empty(), None)?;
+    // On any error the OwnedFd is dropped, which closes the fd (same cleanup
+    // the old explicit close path did, but leak-free even on early errors).
+    let res = bind_sock(&sock, fd, backlog);
+    res.map(move |_| sock.into_raw_fd())
+}
+
+fn bind_sock(sock: &OwnedFd, fd: &ListenFd, backlog: socket::Backlog) -> Result<()> {
     socket::setsockopt(sock, socket::sockopt::ReuseAddr, &true)?;
-    let rv = socket::bind(sock, &addr).map_err(From::from).and_then(|_| {
-        if fd.should_listen() {
-            socket::listen(sock, backlog)?;
+    match fd {
+        ListenFd::TcpListener(addr) | ListenFd::UdpSocket(addr) => {
+            let sa = socket::SockaddrStorage::from(*addr);
+            socket::bind(sock.as_raw_fd(), &sa)?;
         }
-        Ok(())
-    });
-
-    if rv.is_err() {
-        unsafe { close(sock) };
+        ListenFd::UnixListener(path) => {
+            let ua = socket::UnixAddr::new(path)?;
+            socket::bind(sock.as_raw_fd(), &ua)?;
+        }
     }
-
-    rv.map(|_| sock)
+    if fd.should_listen() {
+        socket::listen(sock, backlog)?;
+    }
+    Ok(())
 }
 
 pub fn describe_addr(raw_fd: RawFd) -> Result<impl Display> {
-    Ok(socket::getsockname(raw_fd)?)
+    Ok(socket::getsockname::<socket::SockaddrStorage>(raw_fd)?)
 }
 
-fn sock_info(fd: &ListenFd) -> Result<(socket::SockAddr, socket::AddressFamily, socket::SockType)> {
+fn sock_info(fd: &ListenFd) -> Result<(socket::AddressFamily, socket::SockType)> {
     Ok(match fd {
         ListenFd::TcpListener(addr) => (
-            socket::SockAddr::new_inet(socket::InetAddr::from_std(addr)),
             if addr.is_ipv4() {
                 socket::AddressFamily::Inet
             } else {
@@ -150,7 +158,6 @@ fn sock_info(fd: &ListenFd) -> Result<(socket::SockAddr, socket::AddressFamily, 
             socket::SockType::Stream,
         ),
         ListenFd::UdpSocket(addr) => (
-            socket::SockAddr::new_inet(socket::InetAddr::from_std(addr)),
             if addr.is_ipv4() {
                 socket::AddressFamily::Inet
             } else {
@@ -158,11 +165,7 @@ fn sock_info(fd: &ListenFd) -> Result<(socket::SockAddr, socket::AddressFamily, 
             },
             socket::SockType::Datagram,
         ),
-        ListenFd::UnixListener(path) => (
-            socket::SockAddr::new_unix(path)?,
-            socket::AddressFamily::Unix,
-            socket::SockType::Stream,
-        ),
+        ListenFd::UnixListener(_) => (socket::AddressFamily::Unix, socket::SockType::Stream),
     })
 }
 

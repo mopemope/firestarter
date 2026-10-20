@@ -247,7 +247,7 @@ impl MonitorProcess {
 
     pub fn spawn(&mut self, name: &str, config: &WorkerConfig) -> Result<bool> {
         let key = config.environment_base_name.to_owned();
-        match fork().expect("failed fork") {
+        match unsafe { fork() }.expect("failed fork") {
             ForkResult::Parent { child } => {
                 // parent
                 self.pid = Some(child);
