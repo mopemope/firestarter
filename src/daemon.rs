@@ -7,8 +7,8 @@ use crate::sock::ListenFd;
 use anyhow::{Context, Result};
 use libc::pid_t;
 use log::{debug, error, info, warn};
-use mio::unix::EventedFd;
-use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::unix::SourceFd;
+use mio::{Events, Interest, Poll, Token};
 use nix::sys::signal;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet};
 use nix::unistd::{getpid, Pid};
@@ -150,21 +150,17 @@ impl Daemon {
 
     pub fn wait(&mut self, listener: &UnixListener) -> Result<()> {
         let timeout = time::Duration::from_secs(1);
-        let poll = Poll::new().context("failed create Poll")?;
+        let mut poll = Poll::new().context("failed create Poll")?;
         let ctrl_fd: RawFd = listener.as_raw_fd();
         let listen_token = Token(1);
-        poll.register(
-            &EventedFd(&ctrl_fd),
-            listen_token,
-            Ready::readable(),
-            PollOpt::edge(),
-        )?;
+        poll.registry()
+            .register(&mut SourceFd(&ctrl_fd), listen_token, Interest::READABLE)?;
 
         // start loop
         let mut now = time::SystemTime::now();
         let mut events = Events::with_capacity(128);
         while !self.monitors.is_empty() {
-            if let Err(e) = poll.poll_interruptible(&mut events, Some(timeout)) {
+            if let Err(e) = poll.poll(&mut events, Some(timeout)) {
                 // Interrupt
                 debug!("interrupt main loop. caused by: {} pid [{}]", e, self.pid);
                 self.clean_process();

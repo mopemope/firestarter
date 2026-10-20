@@ -11,13 +11,13 @@ use anyhow::{Context, Error, Result};
 use glob::glob;
 use libc;
 use log::{debug, error, info, trace, warn};
-use mio::unix::EventedFd;
-use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::unix::SourceFd;
+use mio::{Events, Interest, Poll, Token};
 use nix::sys::signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, fork, getpid, ForkResult, Pid};
 use std::collections::HashMap;
-use std::io::{copy, Write};
+use std::io::{copy, ErrorKind, Write};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::net::UnixListener;
 use std::process::{exit, Child};
@@ -181,6 +181,10 @@ impl MonitorProcess {
         match listen_fd {
             ListenFd::UnixListener(_) => {
                 let raw_fd = listen_fd.create_raw_fd(1)?;
+                // mio 1.x is edge-triggered only, and the monitor drains the
+                // control socket with accept-until-WouldBlock loops; a
+                // blocking listener would hang on the second accept call.
+                set_nonblock(raw_fd)?;
                 info!(
                     "listen control socket {}. pid [{}]",
                     listen_fd.describe_raw_fd(raw_fd)?,
@@ -376,26 +380,20 @@ pub enum OutputKind {
 }
 
 struct IOEvent {
-    pub token: Token,
     pub fd: RawFd,
     pub reader: fs::File,
     pub kind: OutputKind,
 }
 
 enum FdEvent {
-    CtrlFdEvent(RawFd, Token),
-    LisetnFdEvent(RawFd, Token),
+    CtrlFdEvent,
+    ListenFdEvent(RawFd),
 }
 
 impl IOEvent {
-    fn new(token: Token, fd: RawFd, kind: OutputKind) -> Self {
+    fn new(fd: RawFd, kind: OutputKind) -> Self {
         let reader: fs::File = unsafe { fs::File::from_raw_fd(fd) };
-        IOEvent {
-            token,
-            fd,
-            reader,
-            kind,
-        }
+        IOEvent { fd, reader, kind }
     }
 }
 
@@ -436,26 +434,27 @@ impl Monitor {
         let token = self.next_token();
         set_nonblock(fd)?;
         self.poll
-            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::edge())?;
-        self.io_events.insert(token, IOEvent::new(token, fd, kind));
+            .registry()
+            .register(&mut SourceFd(&fd), token, Interest::READABLE)?;
+        self.io_events.insert(token, IOEvent::new(fd, kind));
         Ok(())
     }
 
     pub fn watch_listen_fd(&mut self, fd: RawFd) -> Result<()> {
         let token = self.next_token();
         self.poll
-            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::edge())?;
-        self.fd_events
-            .insert(token, FdEvent::LisetnFdEvent(fd, token));
+            .registry()
+            .register(&mut SourceFd(&fd), token, Interest::READABLE)?;
+        self.fd_events.insert(token, FdEvent::ListenFdEvent(fd));
         Ok(())
     }
 
     pub fn watch_ctrl_fd(&mut self, fd: RawFd) -> Result<()> {
         let token = self.next_token();
         self.poll
-            .register(&EventedFd(&fd), token, Ready::readable(), PollOpt::level())?;
-        self.fd_events
-            .insert(token, FdEvent::CtrlFdEvent(fd, token));
+            .registry()
+            .register(&mut SourceFd(&fd), token, Interest::READABLE)?;
+        self.fd_events.insert(token, FdEvent::CtrlFdEvent);
         Ok(())
     }
 
@@ -615,11 +614,11 @@ impl Monitor {
                 "wait client connection [{}]. pid [{}]",
                 worker.name, self.pid
             );
-            self.poll.poll_interruptible(&mut events, None)?;
+            self.poll.poll(&mut events, None)?;
             for event in &events {
                 let token = event.token();
                 if let Some(fd) = self.get_listen_event(token)? {
-                    self.poll.deregister(&EventedFd(&fd))?;
+                    self.poll.registry().deregister(&mut SourceFd(&fd))?;
                     // spawn
                     if !worker.active {
                         worker.run(self)?;
@@ -683,7 +682,7 @@ impl Monitor {
                 }
             };
             if size == 0 {
-                self.poll.deregister(&EventedFd(&event.fd))?;
+                self.poll.registry().deregister(&mut SourceFd(&event.fd))?;
                 remove = true;
             }
             remove
@@ -696,7 +695,7 @@ impl Monitor {
     fn get_listen_event(&mut self, token: Token) -> Result<Option<RawFd>> {
         let res = if let Some(ref mut event) = self.fd_events.get_mut(&token) {
             match event {
-                FdEvent::LisetnFdEvent(fd, _) => Some(*fd),
+                FdEvent::ListenFdEvent(fd) => Some(*fd),
                 _ => None,
             }
         } else {
@@ -707,7 +706,7 @@ impl Monitor {
 
     fn is_ctrl_event(&self, token: Token) -> bool {
         if let Some(event) = self.fd_events.get(&token) {
-            if let FdEvent::CtrlFdEvent(..) = event {
+            if let FdEvent::CtrlFdEvent = event {
                 return true;
             }
         }
@@ -715,17 +714,21 @@ impl Monitor {
     }
 
     fn get_ack_event(&mut self, token: Token) -> Result<Option<Signal>> {
-        if self.is_ctrl_event(token) {
-            let (stream, _addr) = &mut self.ctrl_sock.accept()?;
-            let cmd = read_command(stream)?;
-            let CtrlCommand {
-                ref command,
-                signal,
-                ..
-            } = cmd;
-
-            match command {
-                Command::Ack => return Ok(signal),
+        if !self.is_ctrl_event(token) {
+            return Ok(None);
+        }
+        // mio 1.x only has edge-triggered readiness: drain the control socket
+        // so a queued ack behind another connection cannot be deferred by up
+        // to one poll timeout (the old level-triggered behavior).
+        loop {
+            let (stream, _addr) = match self.ctrl_sock.accept() {
+                Ok(pair) => pair,
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock => break,
+                Err(e) => return Err(Error::new(e)),
+            };
+            let cmd = read_command(&stream)?;
+            match cmd.command {
+                Command::Ack => return Ok(cmd.signal),
                 _ => warn!("now upgrading. ignore command. pid [{}]", self.pid),
             }
         }
@@ -733,8 +736,17 @@ impl Monitor {
     }
 
     fn process_ctrl_event(&mut self, worker: &mut Worker, token: Token) -> Result<()> {
-        if self.is_ctrl_event(token) {
-            let (mut stream, _addr) = self.ctrl_sock.accept()?;
+        if !self.is_ctrl_event(token) {
+            return Ok(());
+        }
+        // mio 1.x is edge-triggered only: drain accepts so concurrent client
+        // connections are handled in one pass instead of one per poll tick.
+        loop {
+            let (mut stream, _addr) = match self.ctrl_sock.accept() {
+                Ok(pair) => pair,
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock => break,
+                Err(e) => return Err(Error::new(e)),
+            };
             let cmd = read_command(&stream)?;
             let res = self.send_ctrl_command(&cmd, worker);
             match res.command {
@@ -765,7 +777,8 @@ impl Monitor {
 
         while self.active {
             let mut alive = true;
-            let size = self.poll.poll_interruptible(&mut events, timeout)?;
+            self.poll.poll(&mut events, timeout)?;
+            let has_events = !events.is_empty();
             for event in &events {
                 let token = event.token();
                 // catch err ?
@@ -787,7 +800,7 @@ impl Monitor {
                     now = time::SystemTime::now();
                 }
             }
-            if alive && size > 0 {
+            if alive && has_events {
                 continue;
             }
             let (_alive, respawn) = worker.health_check();
@@ -817,7 +830,7 @@ impl Monitor {
         let timeout = Some(time::Duration::from_secs(1));
         let mut count = 0;
         while ack.is_empty() && count < 10 {
-            if let Err(e) = self.poll.poll_interruptible(&mut events, timeout) {
+            if let Err(e) = self.poll.poll(&mut events, timeout) {
                 // cleanup
                 worker.signal_all(Signal::SIGTERM)?;
                 if let Ok(_var) = env::var(format!("{}_HANDLE_SIGNAL", APP_NAME_UPPER)) {
@@ -859,7 +872,7 @@ impl Monitor {
         let upgrade_timeout = time::SystemTime::now();
 
         loop {
-            if let Err(e) = self.poll.poll_interruptible(&mut events, timeout) {
+            if let Err(e) = self.poll.poll(&mut events, timeout) {
                 if let Err(e) = worker.signal_all(Signal::SIGTERM) {
                     warn!("fail send signal SIGTERM. caused by: {:?}", e);
                 }
@@ -928,9 +941,9 @@ impl Monitor {
         let now = time::SystemTime::now();
         let timeout = Some(time::Duration::from_secs(secs));
         loop {
-            match self.poll.poll_interruptible(&mut events, timeout) {
-                Ok(size) => {
-                    if size == 0 {
+            match self.poll.poll(&mut events, timeout) {
+                Ok(()) => {
+                    if events.is_empty() {
                         return Ok(());
                     }
                     for event in &events {
